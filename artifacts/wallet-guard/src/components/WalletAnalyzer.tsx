@@ -466,57 +466,70 @@ const WalletAnalyzer = () => {
       <div className="mb-6 w-full">
 
         {/* Search Card */}
-        <div className="rounded-xl border w-full max-w-2xl mx-auto shadow-sm border-border/50 bg-card/50 backdrop-blur-sm">
-          <div className="p-6">
-            <form onSubmit={handleAnalyze} className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
-                <Input
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Ingrese dirección TRC20 (ej. T...)"
-                  className={`pl-10 h-12 bg-background border-input focus-visible:ring-primary text-base ${address || showReport ? "pr-24" : ""}`}
+        <div
+          className="w-full max-w-2xl mx-auto"
+          style={{
+            borderRadius: "16px",
+            border: "1px solid rgba(255,255,255,0.08)",
+            background: "#0b0b0b",
+            boxShadow: "0 0 25px rgba(0,255,140,0.08), 0 0 40px rgba(0,0,0,0.6)",
+            padding: "20px",
+          }}
+        >
+          <form onSubmit={handleAnalyze} className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
+              <Input
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Ingrese dirección TRC20 (ej. T...)"
+                className={`pl-10 h-12 bg-background border-input focus-visible:ring-primary text-base ${address || showReport ? "pr-24" : ""}`}
+                disabled={isAnalyzing}
+              />
+              {(address || showReport) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleClear}
                   disabled={isAnalyzing}
-                />
-                {(address || showReport) && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handleClear}
-                    disabled={isAnalyzing}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 h-9 px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center gap-1"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    LIMPIAR
-                  </Button>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsScannerOpen(true)}
-                disabled={isAnalyzing}
-                className="h-12 px-4 shrink-0 border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground"
-              >
-                <QrCode className="w-5 h-5 mr-2" />
-                Escanear QR
-              </Button>
-              <Button
-                type="submit"
-                disabled={isAnalyzing}
-                className="h-12 w-full sm:w-auto min-w-[140px] px-8"
-              >
-                {isAnalyzing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Analizando...
-                  </>
-                ) : (
-                  "Analizar dirección"
-                )}
-              </Button>
-            </form>
-          </div>
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-9 px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center gap-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  LIMPIAR
+                </Button>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsScannerOpen(true)}
+              disabled={isAnalyzing}
+              className="h-12 px-4 shrink-0 border-input bg-background hover:bg-accent hover:text-accent-foreground transition-all duration-[250ms]"
+              style={{ boxShadow: "0 0 10px rgba(0,255,140,0.2)" }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 0 18px rgba(0,255,140,0.35)")}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 10px rgba(0,255,140,0.2)")}
+            >
+              <QrCode className="w-5 h-5 mr-2" />
+              Escanear QR
+            </Button>
+            <Button
+              type="submit"
+              disabled={isAnalyzing}
+              className="h-12 w-full sm:w-auto min-w-[140px] px-8 transition-all duration-[250ms]"
+              style={{ boxShadow: "0 0 10px rgba(0,255,140,0.2)" }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 0 18px rgba(0,255,140,0.35)")}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 10px rgba(0,255,140,0.2)")}
+            >
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Analizando...
+                </>
+              ) : (
+                "Analizar dirección"
+              )}
+            </Button>
+          </form>
         </div>
       </div>
 
