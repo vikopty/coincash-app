@@ -6,6 +6,7 @@ import { Shield, AlertTriangle, ArrowRightLeft, Clock, History, Ban, ShieldAlert
 
 interface ReportData {
   address: string;
+  accountType: string;
   balanceUSDT: number;
   totalTx: number;
   txIn: number;
@@ -22,6 +23,7 @@ interface ReportData {
 const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
   const {
     address = "",
+    accountType = "Normal",
     balanceUSDT = 0,
     totalTx = 0,
     txIn = 0,
@@ -148,9 +150,13 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                   }}
                 />
               </div>
-              <div>
+              <div className="space-y-1">
                 <div className="text-2xl font-bold">Red: TRON</div>
                 <div className="text-sm text-muted-foreground">USDT (TRC20)</div>
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="text-xs text-muted-foreground">Tipo de cuenta:</span>
+                  <Badge variant="outline" className="text-xs">{accountType}</Badge>
+                </div>
               </div>
             </div>
           </CardContent>

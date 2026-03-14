@@ -27,3 +27,8 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+VITE_TRON_API_KEY = "3602311a-f31c-4ad0-b351-647e8cd9d11a"

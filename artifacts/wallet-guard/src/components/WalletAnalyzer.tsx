@@ -9,6 +9,7 @@ import { toast } from "sonner";
 
 interface ReportData {
   address: string;
+  accountType: string;
   balanceUSDT: number;
   totalTx: number;
   txIn: number;
@@ -61,6 +62,14 @@ const WalletAnalyzer = () => {
     );
     const account = accountData.data?.[0];
     if (!account) throw new Error("Dirección no encontrada en la red TRON");
+
+    // Account type
+    const accountTypeMap: Record<number, string> = {
+      0: "Normal",
+      1: "Emisor de Token",
+      2: "Contrato",
+    };
+    const accountType = accountTypeMap[account.account_type as number] ?? "Normal";
 
     // USDT balance from trc20 map: { [contractAddress]: "amount_string" }
     const trc20Map: Record<string, string> = {};
@@ -142,6 +151,7 @@ const WalletAnalyzer = () => {
 
     return {
       address: addr,
+      accountType,
       balanceUSDT,
       totalTx,
       txIn,
