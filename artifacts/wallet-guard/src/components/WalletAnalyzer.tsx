@@ -71,7 +71,9 @@ const WalletAnalyzer = () => {
 
   const checkUsdtBlacklist = async (addr: string): Promise<boolean> => {
     try {
+      // USDT TRC20 contract — exposes isBlackListed(address) in its ABI
       const usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+      // ABI-encode the wallet address as a 32-byte hex parameter
       const param = tronBase58ToAbiParam(addr);
       const apiKey = import.meta.env.VITE_TRON_API_KEY;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -83,16 +85,20 @@ const WalletAnalyzer = () => {
         body: JSON.stringify({
           owner_address: addr,
           contract_address: usdtContract,
-          function_selector: "isBlacklisted(address)",
+          // Correct ABI function name — capital L (isBlackListed, not isBlacklisted)
+          function_selector: "isBlackListed(address)",
           parameter: param,
           visible: true,
         }),
       });
       if (!res.ok) return false;
       const data = await res.json();
-      // ABI bool result: 32 bytes — all zeros = false, last byte 01 = true
+      // Successful call: result.result === true and no revert message
+      if (!data.result?.result) return false;
+      // ABI bool result: 32 hex chars = 32 bytes
+      // false → all zeros; true → ...0001 (any non-zero character)
       const result: string = data.constant_result?.[0] ?? "";
-      return /[^0]/.test(result);
+      return result.length === 64 && /[^0]/.test(result);
     } catch {
       return false;
     }
