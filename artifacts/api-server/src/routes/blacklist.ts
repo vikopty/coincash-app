@@ -85,6 +85,20 @@ async function syncBlacklist(): Promise<void> {
 syncBlacklist();
 setInterval(syncBlacklist, 5 * 60 * 1000);
 
+// GET /api/stats — aggregate stats for the dashboard
+router.get("/stats", async (_req, res) => {
+  try {
+    const { count, max } = await import("drizzle-orm");
+    const [totals] = await db
+      .select({ total: count(), lastFreeze: max(blacklistedAddresses.freezeTime) })
+      .from(blacklistedAddresses);
+    res.json({ totalBlacklisted: totals?.total ?? 0, lastFreezeTime: totals?.lastFreeze ?? null });
+  } catch (err) {
+    console.error("[GET /stats] DB error:", err);
+    res.status(500).json({ error: "Error al obtener estadísticas" });
+  }
+});
+
 // GET /api/blacklist/check/:address — returns whether an address is in the DB
 router.get("/blacklist/check/:address", async (req, res) => {
   try {

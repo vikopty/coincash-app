@@ -1,10 +1,29 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, Loader2, QrCode, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import TronAnalysisReport from "@/components/TronAnalysisReport";
+import ScannerPanel from "@/components/ScannerPanel";
+import ScanningAnimation from "@/components/ScanningAnimation";
 import QRScannerDialog from "@/components/QRScannerDialog";
 import { toast } from "sonner";
+
+// Daily stats helpers (localStorage)
+interface DailyStats { date: string; analyzed: number; highRisk: number; }
+function getDailyStats(): DailyStats {
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const raw = localStorage.getItem("wg_daily_stats");
+    if (raw) {
+      const parsed: DailyStats = JSON.parse(raw);
+      if (parsed.date === today) return parsed;
+    }
+  } catch {}
+  return { date: today, analyzed: 0, highRisk: 0 };
+}
+function saveDailyStats(s: DailyStats) {
+  try { localStorage.setItem("wg_daily_stats", JSON.stringify(s)); } catch {}
+}
 
 export interface RiskyCounterparty {
   address: string;
@@ -87,6 +106,12 @@ const WalletAnalyzer = () => {
   const [showReport, setShowReport] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [dailyStats, setDailyStats] = useState<DailyStats>(() => getDailyStats());
+
+  // Sync daily stats from localStorage on mount
+  useEffect(() => {
+    setDailyStats(getDailyStats());
+  }, []);
 
   const isValidTronAddress = (addr: string) => {
     return /^T[a-zA-Z0-9]{33}$/.test(addr);
@@ -353,6 +378,17 @@ const WalletAnalyzer = () => {
       const data = await fetchTronData(trimmed);
       setReportData(data);
       setShowReport(true);
+
+      // Update daily stats
+      const current = getDailyStats();
+      const isHighRisk = data.isFrozen || data.isInBlacklistDB || data.riskyCounterparties.length > 0;
+      const updated: DailyStats = {
+        ...current,
+        analyzed: current.analyzed + 1,
+        highRisk: current.highRisk + (isHighRisk ? 1 : 0),
+      };
+      saveDailyStats(updated);
+      setDailyStats(updated);
     } catch (error: any) {
       toast.error(error.message || "Error al analizar la dirección");
     } finally {
@@ -374,12 +410,12 @@ const WalletAnalyzer = () => {
   return (
     <div className="flex flex-col items-center w-full max-w-4xl px-4 py-8 mx-auto">
       {/* Header */}
-      <div className="text-center mb-8 w-full">
+      <div className="text-center mb-6 w-full">
         <h1 className="text-4xl font-extrabold tracking-tight lg:text-5xl mb-1">
           Coin<span className="text-primary">Cash</span>
         </h1>
         <div
-          className="flex items-center justify-center gap-1.5 mb-8"
+          className="flex items-center justify-center gap-1.5 mb-6"
           style={{ color: "rgb(31, 189, 20)", fontSize: "20px" }}
         >
           WalletGuard
@@ -440,17 +476,27 @@ const WalletAnalyzer = () => {
         </div>
       </div>
 
-      {/* Report or placeholder */}
+      {/* Wallet Security Scanner — always visible */}
+      <div className="w-full mb-2">
+        <ScannerPanel
+          analyzedToday={dailyStats.analyzed}
+          highRiskToday={dailyStats.highRisk}
+        />
+      </div>
+
+      {/* Report / Scanning animation / Placeholder */}
       <div className="w-full">
-        {showReport && reportData ? (
+        {isAnalyzing ? (
+          <ScanningAnimation isAnalyzing={isAnalyzing} />
+        ) : showReport && reportData ? (
           <TronAnalysisReport reportData={reportData} />
-        ) : !isAnalyzing ? (
-          <div className="flex justify-center items-center py-12">
-            <p className="text-muted-foreground text-center text-lg">
+        ) : (
+          <div className="flex justify-center items-center py-10">
+            <p className="text-muted-foreground text-center text-base">
               Ingresa una dirección TRON para comenzar el análisis
             </p>
           </div>
-        ) : null}
+        )}
       </div>
 
       <QRScannerDialog
