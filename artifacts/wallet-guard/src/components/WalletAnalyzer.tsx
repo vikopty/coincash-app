@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Loader2, QrCode, X, CheckCircle2 } from "lucide-react";
+import { ScanSearch, Loader2, QrCode, X, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import TronAnalysisReport from "@/components/TronAnalysisReport";
-import ScannerPanel from "@/components/ScannerPanel";
 import ScanningAnimation from "@/components/ScanningAnimation";
 import QRScannerDialog from "@/components/QRScannerDialog";
 import { toast } from "sonner";
+
+const GREEN  = "#19C37D";
+const CARD   = "#121821";
+const BORDER = "rgba(255,255,255,0.07)";
 
 // Daily stats helpers (localStorage)
 interface DailyStats { date: string; analyzed: number; highRisk: number; }
@@ -412,8 +413,8 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     };
   };
 
-  const handleAnalyze = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAnalyze = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault();
     const trimmed = address.trim();
     if (!trimmed) {
       toast.error("Por favor ingresa una dirección de billetera TRON");
@@ -467,101 +468,73 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   };
 
   return (
-    <div className="flex flex-col items-center w-full max-w-4xl px-4 py-8 mx-auto">
-      {/* Header */}
-      <div className="flex flex-col items-center justify-center mt-5 mb-6 w-full">
-        <img
-          src="/coincash-logo.png"
-          alt="CoinCash"
-          className="block"
-          style={{ width: "260px", height: "auto" }}
-        />
-        <div
-          style={{ color: "#22c55e", fontSize: "28px", fontWeight: 500, marginTop: "-5px" }}
-        >
-          WalletGuard
-        </div>
-      </div>
-      <div className="mb-6 w-full">
+    <div className="flex flex-col w-full px-4 mx-auto" style={{ maxWidth: "640px" }}>
 
-        {/* Search Card */}
-        <div
-          className="w-full max-w-2xl mx-auto"
-          style={{
-            borderRadius: "16px",
-            border: "1px solid rgba(255,255,255,0.08)",
-            background: "#0b0b0b",
-            boxShadow: "0 0 25px rgba(0,255,140,0.08), 0 0 40px rgba(0,0,0,0.6)",
-            padding: "20px",
-          }}
-        >
-          <form onSubmit={handleAnalyze} className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
-              <Input
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Ingrese dirección TRC20 (ej. T...)"
-                className={`pl-10 h-12 bg-background border-input focus-visible:ring-primary text-base ${address || showReport ? "pr-24" : ""}`}
-                disabled={isAnalyzing}
-              />
-              {(address || showReport) && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={handleClear}
-                  disabled={isAnalyzing}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-9 px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center gap-1"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  LIMPIAR
-                </Button>
-              )}
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsScannerOpen(true)}
-              disabled={isAnalyzing}
-              className="h-12 px-4 shrink-0 border-input bg-background hover:bg-accent hover:text-accent-foreground transition-all duration-[250ms]"
-              style={{ boxShadow: "0 0 10px rgba(0,255,140,0.2)" }}
-              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 0 18px rgba(0,255,140,0.35)")}
-              onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 10px rgba(0,255,140,0.2)")}
-            >
-              <QrCode className="w-5 h-5 mr-2" />
-              Escanear QR
-            </Button>
-            <Button
-              id="wg-analyze-btn"
-              type="submit"
-              disabled={isAnalyzing}
-              className="h-12 w-full sm:w-auto min-w-[140px] px-8 transition-all duration-[250ms]"
-              style={{ boxShadow: "0 0 10px rgba(0,255,140,0.2)" }}
-              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 0 18px rgba(0,255,140,0.35)")}
-              onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 10px rgba(0,255,140,0.2)")}
-            >
-              {isAnalyzing ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Analizando...
-                </>
-              ) : (
-                "Analizar dirección"
-              )}
-            </Button>
-          </form>
+      {/* ── Input card ── */}
+      <div className="rounded-2xl p-4 mb-4"
+        style={{ background: CARD, border: `1px solid ${BORDER}`, boxShadow: "0 4px 24px rgba(0,0,0,0.45)" }}>
+
+        {/* Address input row */}
+        <div className="relative flex items-center mb-3">
+          <ScanSearch className="absolute left-3.5 h-4.5 w-4.5 pointer-events-none"
+            style={{ color: "rgba(255,255,255,0.3)", width: 18, height: 18 }} />
+          <input
+            value={address}
+            onChange={e => setAddress(e.target.value)}
+            placeholder="Dirección TRON (T...)"
+            disabled={isAnalyzing}
+            className="w-full rounded-xl text-sm text-white outline-none font-mono"
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: `1px solid ${address ? GREEN + "50" : BORDER}`,
+              padding: "12px 40px 12px 40px",
+              transition: "border-color 0.2s",
+            }}
+          />
+          {address && (
+            <button type="button" onClick={handleClear} disabled={isAnalyzing}
+              className="absolute right-3 flex items-center justify-center rounded-full"
+              style={{ color: "rgba(255,255,255,0.3)", width: 20, height: 20 }}>
+              <X style={{ width: 14, height: 14 }} />
+            </button>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex gap-2.5">
+          <button
+            type="button"
+            onClick={() => setIsScannerOpen(true)}
+            disabled={isAnalyzing}
+            className="flex items-center justify-center gap-2 rounded-xl py-3 px-4 text-sm font-medium transition-opacity active:opacity-70"
+            style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}`, color: "rgba(255,255,255,0.6)", flex: "0 0 auto" }}>
+            <QrCode style={{ width: 16, height: 16 }} />
+            <span>Escanear QR</span>
+          </button>
+
+          <button
+            id="wg-analyze-btn"
+            type="button"
+            onClick={() => handleAnalyze()}
+            disabled={isAnalyzing}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl py-3 px-4 text-sm font-bold text-black transition-opacity active:opacity-80"
+            style={{ background: GREEN, boxShadow: isAnalyzing ? "none" : `0 0 18px ${GREEN}44` }}>
+            {isAnalyzing ? (
+              <>
+                <Loader2 style={{ width: 16, height: 16 }} className="animate-spin" />
+                <span>Analizando...</span>
+              </>
+            ) : (
+              <>
+                <ScanSearch style={{ width: 16, height: 16 }} />
+                <span>Analizar dirección</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* Wallet Security Scanner — always visible */}
-      <div className="w-full mb-2">
-        <ScannerPanel
-          analyzedToday={dailyStats.analyzed}
-          highRiskToday={dailyStats.highRisk}
-        />
-      </div>
-
-      {/* Report / Scanning animation / Placeholder */}
+      {/* ── Results (only shown after analysis) ── */}
       <div ref={resultRef} className="w-full scroll-mt-4">
         {isAnalyzing ? (
           <ScanningAnimation isAnalyzing={isAnalyzing} waitingMessage={rateLimitMessage} />
@@ -569,14 +542,15 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
           <>
             {!reportData.isFrozen && !reportData.isInBlacklistDB && reportData.riskyCounterparties.length === 0 && (
               <motion.div
-                initial={{ opacity: 0, y: -10 }}
+                initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4 }}
-                className="mb-4 flex items-start gap-3 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3.5"
+                transition={{ duration: 0.35 }}
+                className="mb-4 flex items-start gap-3 rounded-2xl px-4 py-3.5"
+                style={{ background: `${GREEN}12`, border: `1px solid ${GREEN}35` }}
               >
-                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-400" />
-                <p className="text-sm text-green-300 leading-snug">
-                  <span className="font-semibold text-green-200">Análisis completado</span> — no se detectaron riesgos en esta wallet.
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" style={{ color: GREEN }} />
+                <p className="text-sm leading-snug" style={{ color: "rgba(255,255,255,0.8)" }}>
+                  <span className="font-semibold text-white">Análisis completado</span> — no se detectaron riesgos en esta wallet.
                 </p>
               </motion.div>
             )}
