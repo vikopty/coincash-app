@@ -151,7 +151,12 @@ const tronBase58ToAbiParam = (address: string): string => {
   return addressHex.padStart(64, "0");
 };
 
-const WalletAnalyzer = () => {
+interface WalletAnalyzerProps {
+  prefillAddress?: string;
+  onAddressConsumed?: () => void;
+}
+
+const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerProps = {}) => {
   const [address, setAddress] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -165,6 +170,20 @@ const WalletAnalyzer = () => {
   useEffect(() => {
     setDailyStats(getDailyStats());
   }, []);
+
+  // Pre-fill address from Wallets tab and auto-trigger analysis
+  useEffect(() => {
+    if (!prefillAddress) return;
+    setAddress(prefillAddress);
+    setShowReport(false);
+    setReportData(null);
+    onAddressConsumed?.();
+    // Small delay so the input renders before we trigger the form
+    setTimeout(() => {
+      const btn = document.getElementById("wg-analyze-btn") as HTMLButtonElement | null;
+      btn?.click();
+    }, 100);
+  }, [prefillAddress]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isValidTronAddress = (addr: string) => {
     return /^T[a-zA-Z0-9]{33}$/.test(addr);
@@ -513,6 +532,7 @@ const WalletAnalyzer = () => {
               Escanear QR
             </Button>
             <Button
+              id="wg-analyze-btn"
               type="submit"
               disabled={isAnalyzing}
               className="h-12 w-full sm:w-auto min-w-[140px] px-8 transition-all duration-[250ms]"
