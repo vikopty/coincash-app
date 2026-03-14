@@ -120,6 +120,23 @@ TRON Wallet Analyzer PWA — React + Vite, dark fintech theme, all UI in Spanish
 
 **NOTE:** `@noble/hashes` subpath imports are broken with Vite bundler — always use `crypto.subtle` instead. `@ts-nocheck` on `tronWallet.ts` suppresses noble type quirks.
 
+**TronGrid API (`src/lib/tronApi.ts`):**
+- `fetchAccountInfo(address)` → TRX balance (SUN÷1e6) + USDT TRC20 balance from `trc20` array
+- `fetchTRXTransactions(address)` + `fetchUSDTTransactions(address)` → merged/sorted as `TxRecord[]`
+- `sendTRX(from, to, amountTrx, privKey)` → createtransaction → sign secp256k1 → broadcasttransaction
+- `sendUSDT(from, to, amountUsdt, privKey)` → triggersmartcontract (ABI encoded transfer) → sign → broadcast
+- Address utils: `tronAddrToHex(b58)` / `hexToTronAddr(hex21)` (async, uses crypto.subtle SHA-256 for checksum)
+- Rate limiter: 110ms gap between requests. TRON API key in `VITE_TRON_API_KEY`.
+- Signing: `secp256k1.sign(txHashBytes, privBytes, { lowS: false })` → `toCompactHex() + recovery (0 or 1)` (NOT +27 like Ethereum)
+
+**Wallet Detail Sheet (`src/components/WalletDetailSheet.tsx`):**
+- Views: `overview` (balances + action buttons + recent txs) | `receive` (QR + copy) | `send` (form → confirm → signing → done) | `history` (full tx list)
+- QR generation: `qrcode` package, `toDataURL()` with dark theme colors
+- Send: validates amount/address, calls `decryptPrivateKey(walletId)`, routes to `sendTRX` or `sendUSDT`
+- Watch wallets show "Solo lectura" instead of Send button
+- Empty state: "Esta wallet no tiene transacciones en la red TRON aún."
+- Opened by tapping any wallet row in WalletsPage (ChevronRight indicator)
+
 **Wallet storage:** `wg_wallets` (public data), `wg_secure_keys` (encrypted privkeys), `wg_pin_vault` (PIN verification sentinel), `wg_device_key` (fallback AES key)
 
 **Dev port:** 25766 (reads from `PORT` env var)

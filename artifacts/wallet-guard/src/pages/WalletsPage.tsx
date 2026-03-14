@@ -10,6 +10,7 @@ import {
   importFromKeystore, validateTronAddress, type TronWallet
 } from "@/lib/tronWallet";
 import { encryptPrivateKey, deleteEncryptedKey, isPinEnabled } from "@/lib/security";
+import WalletDetailSheet from "@/components/WalletDetailSheet";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const BG     = "#0B0F14";
@@ -124,6 +125,7 @@ export default function WalletsPage({ onScan }: Props) {
   const [address, setAddress]     = useState("");
   const [copied, setCopied]       = useState<string|null>(null);
   const [loading, setLoading]     = useState(false);
+  const [detailWallet, setDetailWallet] = useState<SavedWallet|null>(null);
 
   // Create wallet state
   const [generated, setGenerated] = useState<TronWallet|null>(null);
@@ -300,8 +302,9 @@ export default function WalletsPage({ onScan }: Props) {
           {wallets.map((w, i) => {
             const badge = typeBadge(w.type); const color = avatarColor(w.type);
             return (
-              <div key={w.id} className="flex items-center gap-3 px-4 py-4"
-                style={{ borderBottom:i<wallets.length-1?`1px solid ${BORDER}`:"none" }}>
+              <div key={w.id} className="flex items-center gap-3 px-4 py-4 active:bg-white/[0.03] cursor-pointer transition-colors"
+                style={{ borderBottom:i<wallets.length-1?`1px solid ${BORDER}`:"none" }}
+                onClick={() => setDetailWallet(w)}>
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold"
                   style={{ background:`${color}22`, color }}>
                   {w.name.slice(0,1).toUpperCase()}
@@ -314,20 +317,21 @@ export default function WalletsPage({ onScan }: Props) {
                   </div>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-[11px] font-mono truncate" style={{ color:"rgba(255,255,255,0.38)" }}>{short(w.address)}</span>
-                    <button onClick={()=>copyText(w.address,"Dirección")}>
+                    <button onClick={e=>{e.stopPropagation();copyText(w.address,"Dirección");}}>
                       {copied===w.address?<CheckCheck className="h-3 w-3" style={{color:GREEN}}/>:<Copy className="h-3 w-3" style={{color:"rgba(255,255,255,0.25)"}}/>}
                     </button>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <button onClick={()=>onScan(w.address)} className="flex h-8 w-8 items-center justify-center rounded-xl active:opacity-60"
+                  <button onClick={e=>{e.stopPropagation();onScan(w.address);}} className="flex h-8 w-8 items-center justify-center rounded-xl active:opacity-60"
                     style={{ background:`${GREEN}18` }}>
                     <ScanSearch className="h-4 w-4" style={{color:GREEN}}/>
                   </button>
-                  <button onClick={()=>remove(w.id)} className="flex h-8 w-8 items-center justify-center rounded-xl active:opacity-60"
+                  <button onClick={e=>{e.stopPropagation();remove(w.id);}} className="flex h-8 w-8 items-center justify-center rounded-xl active:opacity-60"
                     style={{ background:`${DANGER}15` }}>
                     <Trash2 className="h-4 w-4" style={{color:DANGER}}/>
                   </button>
+                  <ChevronRight className="h-4 w-4 shrink-0" style={{color:"rgba(255,255,255,0.18)"}}/>
                 </div>
               </div>
             );
@@ -591,6 +595,16 @@ export default function WalletsPage({ onScan }: Props) {
             </div>
           </div>
         </BottomSheet>
+      )}
+
+      {/* ═══════════════════════════════════════════════
+          WALLET DETAIL SHEET
+      ═══════════════════════════════════════════════ */}
+      {detailWallet && (
+        <WalletDetailSheet
+          wallet={detailWallet}
+          onClose={() => setDetailWallet(null)}
+        />
       )}
     </div>
   );
