@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Loader2, QrCode } from "lucide-react";
+import { Search, Loader2, QrCode, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import TronAnalysisReport from "@/components/TronAnalysisReport";
@@ -287,6 +287,12 @@ const WalletAnalyzer = () => {
     }
   };
 
+  const handleClear = () => {
+    setAddress("");
+    setReportData(null);
+    setShowReport(false);
+  };
+
   const handleScanSuccess = (result: string) => {
     setAddress(result);
     toast.success("Dirección escaneada correctamente");
@@ -316,9 +322,21 @@ const WalletAnalyzer = () => {
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="Ingrese dirección TRC20 (ej. T...)"
-                  className="pl-10 h-12 bg-background border-input focus-visible:ring-primary text-base"
+                  className={`pl-10 h-12 bg-background border-input focus-visible:ring-primary text-base ${address || showReport ? "pr-24" : ""}`}
                   disabled={isAnalyzing}
                 />
+                {(address || showReport) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleClear}
+                    disabled={isAnalyzing}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-9 px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/60 flex items-center gap-1"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    LIMPIAR
+                  </Button>
+                )}
               </div>
               <Button
                 type="button"
