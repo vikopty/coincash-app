@@ -215,16 +215,11 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full overflow-hidden bg-background flex items-center justify-center p-2 border">
-                <img
-                  src="https://cryptologos.cc/logos/tron-trx-logo.png"
-                  alt="TRON Logo"
-                  className="w-full h-full object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              </div>
+              <img
+                src="/tron-logo.png"
+                alt="TRON"
+                className="w-[60px] h-[60px] rounded-full object-cover shrink-0"
+              />
               <div>
                 <div className="text-2xl font-bold">Red: TRON</div>
                 <div className="text-sm text-muted-foreground">USDT (TRC20)</div>
