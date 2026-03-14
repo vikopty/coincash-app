@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   X, ArrowLeft, Copy, CheckCheck, ArrowDownLeft, ArrowUpRight,
   Loader2, QrCode, Send, RefreshCw, AlertTriangle, Clock,
@@ -63,8 +63,10 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
   const [view, setView]           = useState<View>("overview");
   const [info, setInfo]           = useState<AccountInfo | null>(null);
   const [txs, setTxs]             = useState<TxRecord[]>([]);
-  const [loadingInfo, setLoadingInfo] = useState(true);
-  const [loadingTxs, setLoadingTxs]   = useState(true);
+  // Unified loading state
+  const [loading, setLoading]       = useState(true);   // true on first open (full-screen spinner)
+  const [refreshing, setRefreshing] = useState(false);  // true during background refresh (banner)
+  const [loadError, setLoadError]   = useState(false);  // true if all retries failed
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [copied, setCopied]       = useState(false);
 
@@ -80,37 +82,63 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
 
   const canSend = wallet.type !== "watch" && hasEncryptedKey(wallet.id);
 
-  // ── Load balances ──────────────────────────────────────────────────────────
-  const loadInfo = useCallback(async () => {
-    setLoadingInfo(true);
-    try {
-      const data = await fetchAccountInfo(wallet.address);
-      setInfo(data);
-    } catch {
-      toast.error("No se pudo cargar el saldo.");
-    } finally {
-      setLoadingInfo(false);
+  // Track whether first load has completed — avoids stale closure issues in interval
+  const everLoaded = useRef(false);
+
+  // ── Unified wallet data loader with retry ─────────────────────────────────
+  // Sequential: account info first (TRX + USDT balances), then transactions.
+  // Retries up to 3 times with exponential delay before surfacing an error.
+  const loadWalletData = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (!opts.silent) {
+      if (!everLoaded.current) setLoading(true);  // first open → full-screen spinner
+      else setRefreshing(true);                    // subsequent → subtle banner
+    }
+    setLoadError(false);
+
+    const MAX_ATTEMPTS = 3;
+    let attempt = 0;
+
+    while (attempt < MAX_ATTEMPTS) {
+      try {
+        // Step 1 — TRX balance + USDT via balanceOf (parallel internally)
+        const accountData = await fetchAccountInfo(wallet.address);
+        setInfo(accountData);
+
+        // Step 2 — Transaction history (TRX + USDT, deduplicated internally)
+        const txData = await fetchAllTransactions(wallet.address);
+        setTxs(txData);
+
+        everLoaded.current = true;
+        setLoading(false);
+        setRefreshing(false);
+        setLoadError(false);
+        return; // success — exit loop
+      } catch {
+        attempt++;
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, 1000 * attempt)); // 1s, 2s back-off
+        } else {
+          setLoading(false);
+          setRefreshing(false);
+          setLoadError(true);
+          if (!opts.silent) toast.error("No se pudo conectar con la blockchain. Verifica tu conexión.");
+        }
+      }
     }
   }, [wallet.address]);
 
-  // ── Load transactions ──────────────────────────────────────────────────────
-  const loadTxs = useCallback(async () => {
-    setLoadingTxs(true);
-    try {
-      const data = await fetchAllTransactions(wallet.address);
-      setTxs(data);
-    } catch {
-      toast.error("No se pudieron cargar las transacciones.");
-    } finally {
-      setLoadingTxs(false);
-    }
-  }, [wallet.address]);
-
+  // ── On open: initial load + relay status ──────────────────────────────────
   useEffect(() => {
-    loadInfo();
-    loadTxs();
+    everLoaded.current = false; // reset on wallet change
+    loadWalletData();
     fetchRelayStatus().then(s => setRelayActive(s.relayerActive)).catch(() => {});
-  }, [loadInfo, loadTxs]);
+  }, [wallet.address, loadWalletData]);
+
+  // ── Auto-refresh every 60 seconds while the sheet is open ─────────────────
+  useEffect(() => {
+    const id = setInterval(() => loadWalletData({ silent: true }), 60_000);
+    return () => clearInterval(id);
+  }, [loadWalletData]);
 
   // ── QR code ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -157,8 +185,8 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
       }
       setSendStep("done");
       toast.success("Transacción enviada a la red TRON.");
-      await loadInfo();
-      await loadTxs();
+      // Refresh balances + history after a successful send
+      setTimeout(() => loadWalletData({ silent: true }), 3000);
     } catch (e: any) {
       toast.error(e?.message ?? "Error al enviar la transacción.");
       setSendStep("confirm");
@@ -238,10 +266,41 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
         ════════════════════════════════════════ */}
         {view === "overview" && (
           <div className="px-4 pb-6">
+
+            {/* Blockchain update banner — shown during background refresh */}
+            {refreshing && (
+              <div className="flex items-center gap-2 rounded-2xl px-3 py-2 mb-3 -mt-1"
+                style={{ background: `${BLUE}12`, border: `1px solid ${BLUE}25` }}>
+                <Loader2 className="h-3 w-3 animate-spin shrink-0" style={{ color: BLUE }} />
+                <p className="text-[10px] font-medium" style={{ color: "rgba(255,255,255,0.45)" }}>
+                  Actualizando información de la blockchain…
+                </p>
+              </div>
+            )}
+
+            {/* Error banner — shown after all retries fail */}
+            {loadError && !loading && (
+              <div className="flex items-center gap-2.5 rounded-2xl px-3 py-2.5 mb-3"
+                style={{ background: `${DANGER}0C`, border: `1px solid ${DANGER}25` }}>
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" style={{ color: DANGER }} />
+                <p className="text-[10px] font-medium flex-1" style={{ color: "rgba(255,255,255,0.45)" }}>
+                  Error al conectar con la blockchain.
+                </p>
+                <button onClick={() => loadWalletData()}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
+                  style={{ background: `${DANGER}20`, color: DANGER }}>
+                  Reintentar
+                </button>
+              </div>
+            )}
+
             {/* Balance cards */}
-            {loadingInfo ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin" style={{ color: GREEN }} />
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <Loader2 className="h-8 w-8 animate-spin" style={{ color: GREEN }} />
+                <p className="text-[11px] font-medium text-center" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  Actualizando información de la blockchain…
+                </p>
               </div>
             ) : (
               <>
@@ -315,10 +374,14 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-bold text-white">Transacciones recientes</p>
               <div className="flex items-center gap-2">
-                <button onClick={() => { loadInfo(); loadTxs(); }}
-                  className="flex items-center gap-1 text-[11px] font-medium active:opacity-60"
+                <button onClick={() => loadWalletData()}
+                  disabled={loading || refreshing}
+                  className="flex items-center gap-1 text-[11px] font-medium active:opacity-60 disabled:opacity-30"
                   style={{ color: "rgba(255,255,255,0.35)" }}>
-                  <RefreshCw className="h-3 w-3" /> Actualizar
+                  {refreshing
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <RefreshCw className="h-3 w-3" />
+                  } Actualizar
                 </button>
                 {txs.length > 5 && (
                   <button onClick={() => setView("history")}
@@ -330,11 +393,7 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
               </div>
             </div>
 
-            {loadingTxs ? (
-              <div className="flex justify-center py-6">
-                <Loader2 className="h-5 w-5 animate-spin" style={{ color: "rgba(255,255,255,0.3)" }} />
-              </div>
-            ) : txs.length === 0 ? (
+            {loading ? null : txs.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-8 text-center">
                 <Clock className="h-8 w-8" style={{ color: "rgba(255,255,255,0.12)" }} />
                 <p className="text-sm font-medium" style={{ color: "rgba(255,255,255,0.3)" }}>
@@ -612,15 +671,22 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
           <div className="px-4 pb-10">
             <div className="flex items-center justify-between mb-4">
               <p className="text-base font-bold text-white">Historial completo</p>
-              <button onClick={() => { loadTxs(); }}
-                className="flex items-center gap-1 text-[11px] font-medium"
+              <button onClick={() => loadWalletData()}
+                disabled={loading || refreshing}
+                className="flex items-center gap-1 text-[11px] font-medium disabled:opacity-30"
                 style={{ color: "rgba(255,255,255,0.35)" }}>
-                <RefreshCw className="h-3 w-3" /> Actualizar
+                {refreshing
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <RefreshCw className="h-3 w-3" />
+                } Actualizar
               </button>
             </div>
-            {loadingTxs ? (
-              <div className="flex justify-center py-8">
+            {loading ? (
+              <div className="flex flex-col items-center gap-3 py-12">
                 <Loader2 className="h-6 w-6 animate-spin" style={{ color: GREEN }} />
+                <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+                  Actualizando información de la blockchain…
+                </p>
               </div>
             ) : txs.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-12 text-center">
