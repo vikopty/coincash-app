@@ -33,83 +33,111 @@ const WalletAnalyzer = () => {
     return /^T[a-zA-Z0-9]{33}$/.test(addr);
   };
 
+  const tronGridFetch = async (url: string) => {
+    const headers: Record<string, string> = {
+      "Accept": "application/json",
+    };
+    const apiKey = import.meta.env.VITE_TRON_API_KEY;
+    if (apiKey) {
+      headers["TRON-PRO-API-KEY"] = apiKey;
+    }
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`Error de API TronGrid (${res.status}): ${text}`);
+    }
+    return res.json();
+  };
+
   const fetchTronData = async (addr: string): Promise<ReportData> => {
     if (!isValidTronAddress(addr)) {
       throw new Error("Formato de dirección TRON inválido");
     }
     const usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
-    const accountRes = await fetch(
-      `https://apilist.tronscanapi.com/api/account?address=${encodeURIComponent(addr)}`
+    // 1. Account info via TronGrid
+    const accountData = await tronGridFetch(
+      `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}`
     );
-    if (!accountRes.ok) throw new Error(`Error de API: ${accountRes.status}`);
-    const accountData = await accountRes.json();
-    const usdtToken = accountData.trc20token_balances?.find(
-      (t: any) => t.tokenId === usdtContract
-    );
-    const balanceUSDT = usdtToken
-      ? parseFloat(usdtToken.balance) / Math.pow(10, usdtToken.tokenDecimal)
-      : 0;
-    const dateCreated = accountData.date_created || Date.now();
+    const account = accountData.data?.[0];
+    if (!account) throw new Error("Dirección no encontrada en la red TRON");
 
-    const statsRes = await fetch(
-      `https://apilist.tronscanapi.com/api/account/stats?address=${encodeURIComponent(addr)}`
-    );
-    let totalTx = 0, txIn = 0, txOut = 0;
-    if (statsRes.ok) {
-      const statsData = await statsRes.json();
-      totalTx = statsData.transactions || 0;
-      txIn = statsData.transactions_in || 0;
-      txOut = statsData.transactions_out || 0;
+    // USDT balance from trc20 map: { [contractAddress]: "amount_string" }
+    const trc20Map: Record<string, string> = {};
+    if (Array.isArray(account.trc20)) {
+      account.trc20.forEach((entry: Record<string, string>) => {
+        Object.assign(trc20Map, entry);
+      });
+    }
+    const rawUsdt = trc20Map[usdtContract];
+    const balanceUSDT = rawUsdt ? parseFloat(rawUsdt) / 1e6 : 0;
+    const dateCreated: number = account.create_time || Date.now();
+
+    // 2. Transaction counts via TronGrid (total, in, out)
+    let totalTx = 0;
+    let txIn = 0;
+    let txOut = 0;
+    try {
+      const txData = await tronGridFetch(
+        `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}/transactions?limit=1&only_confirmed=true`
+      );
+      totalTx = txData.meta?.total || 0;
+
+      const txInData = await tronGridFetch(
+        `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}/transactions?limit=1&only_confirmed=true&only_to=true`
+      );
+      txIn = txInData.meta?.total || 0;
+      txOut = Math.max(0, totalTx - txIn);
+    } catch {
+      // Non-fatal; continue with zeros
     }
 
-    const latestTxRes = await fetch(
-      `https://apilist.tronscanapi.com/api/transaction?sort=-timestamp&count=true&limit=1&start=0&address=${encodeURIComponent(addr)}`
-    );
+    // 3. Latest TRC20 transfer timestamp for lastTxDate
     let lastTxDate = Date.now();
-    if (latestTxRes.ok) {
-      const latestTxData = await latestTxRes.json();
-      lastTxDate =
-        latestTxData.data && latestTxData.data.length > 0
-          ? latestTxData.data[0].timestamp
-          : Date.now();
+    try {
+      const latestData = await tronGridFetch(
+        `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}/transactions/trc20?limit=1&contract_address=${usdtContract}&only_confirmed=true`
+      );
+      const first = latestData.data?.[0];
+      if (first?.block_timestamp) lastTxDate = first.block_timestamp;
+    } catch {
+      // Non-fatal; keep default
     }
 
+    // 4. Fetch up to 3 pages of TRC20 USDT transfers
     let totalInUSDT = 0;
     let totalOutUSDT = 0;
     const uniqueWallets = new Set<string>();
     let transfers: any[] = [];
     let exchangeInteractions = 0;
 
+    let fingerprint: string | null = null;
     const maxPages = 3;
     for (let i = 0; i < maxPages; i++) {
-      const res = await fetch(
-        `https://apilist.tronscanapi.com/api/token_trc20/transfers?limit=50&start=${i * 50}&sort=-timestamp&count=true&relatedAddress=${encodeURIComponent(addr)}&contract_address=${usdtContract}`
-      );
-      if (!res.ok) break;
-      const data = await res.json();
-      if (data.token_transfers && data.token_transfers.length > 0) {
-        transfers = transfers.concat(data.token_transfers);
-      }
-      if (!data.token_transfers || data.token_transfers.length < 50) {
+      let url = `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}/transactions/trc20?limit=50&contract_address=${usdtContract}&only_confirmed=true`;
+      if (fingerprint) url += `&fingerprint=${encodeURIComponent(fingerprint)}`;
+      try {
+        const data = await tronGridFetch(url);
+        const batch: any[] = data.data || [];
+        transfers = transfers.concat(batch);
+        fingerprint = data.meta?.fingerprint || null;
+        if (batch.length < 50 || !fingerprint) break;
+      } catch {
         break;
       }
     }
 
     transfers.forEach((t: any) => {
-      const amount = parseFloat(t.quant) / Math.pow(10, t.tokenInfo?.tokenDecimal || 6);
-      if (t.to_address === addr) {
+      const decimals = parseInt(t.token_info?.decimals ?? "6", 10);
+      const amount = parseFloat(t.value || "0") / Math.pow(10, decimals);
+      if (t.to === addr) {
         totalInUSDT += amount;
-      } else if (t.from_address === addr) {
+      } else if (t.from === addr) {
         totalOutUSDT += amount;
       }
-      const isFromExchange = t.from_address_tag?.from_address_tag;
-      const isToExchange = t.to_address_tag?.to_address_tag;
-      if (isFromExchange || isToExchange) {
-        exchangeInteractions++;
-      }
-      uniqueWallets.add(t.from_address);
-      uniqueWallets.add(t.to_address);
+      // TronGrid doesn't expose exchange tags; approximate via known exchange patterns
+      if (t.from) uniqueWallets.add(t.from);
+      if (t.to) uniqueWallets.add(t.to);
     });
 
     return {
