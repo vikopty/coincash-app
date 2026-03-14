@@ -2,7 +2,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { motion, AnimatePresence } from "framer-motion";
-import { History, AlertTriangle, ArrowRightLeft, Ban, ShieldAlert, ShieldX, TriangleAlert } from "lucide-react";
+import { History, AlertTriangle, ArrowRightLeft, Ban, ShieldAlert, ShieldCheck, ShieldX, TriangleAlert } from "lucide-react";
 import type { RiskyCounterparty } from "@/components/WalletAnalyzer";
 
 interface ReportData {
@@ -82,7 +82,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
 
   if (isFrozen) {
     riskScore = 100;
-    riskLevel = "NIVEL DE RIESGO: CRÍTICO";
+    riskLevel = "Severo";
     riskColor = "text-red-500";
   } else if (riskScore <= 25) {
     riskLevel = "Riesgo Bajo";
@@ -183,24 +183,48 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
         )}
       </AnimatePresence>
 
-      {/* USDT Frozen Warning */}
-      {isFrozen && (
+      {/* USDT Freeze Status */}
+      {isFrozen ? (
         <motion.div
           initial={{ opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3 }}
-          className="flex items-center gap-4 rounded-lg border border-red-500 bg-red-500/10 px-5 py-4"
+          className="rounded-xl border-2 border-red-500 bg-red-950/60 px-5 py-4 shadow-lg shadow-red-900/20"
         >
-          <Ban className="h-7 w-7 shrink-0 text-red-500" />
-          <div className="flex-1 space-y-0.5">
-            <p className="font-bold uppercase tracking-widest text-red-500">
-              ESTADO: BLOQUEADO
-            </p>
-            <p className="text-sm text-red-400">ETIQUETA: DIRECCIÓN USDT CONGELADA</p>
+          <div className="flex items-start gap-4">
+            <Ban className="h-8 w-8 shrink-0 text-red-400 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <p className="font-bold text-red-400 text-base tracking-wide">
+                🚨 WALLET BLOQUEADA
+              </p>
+              <p className="text-sm text-red-300">
+                Esta dirección está congelada por el contrato USDT.
+              </p>
+              <p className="text-sm text-red-300 font-medium">
+                No se pueden enviar ni recibir USDT.
+              </p>
+            </div>
+            <Badge variant="destructive" className="shrink-0 px-3 py-1 text-xs uppercase tracking-widest self-start">
+              Severo
+            </Badge>
           </div>
-          <Badge variant="destructive" className="shrink-0 px-3 py-1 text-xs uppercase tracking-widest">
-            NIVEL DE RIESGO: CRÍTICO
-          </Badge>
+        </motion.div>
+      ) : (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className="flex items-start gap-4 rounded-xl border border-green-500/30 bg-green-500/10 px-5 py-4"
+        >
+          <ShieldCheck className="h-7 w-7 shrink-0 text-green-400 mt-0.5" />
+          <div className="flex-1 space-y-0.5">
+            <p className="font-semibold text-green-300 text-sm">
+              ✅ Wallet activa
+            </p>
+            <p className="text-sm text-green-400/80">
+              No está en la lista negra de USDT.
+            </p>
+          </div>
         </motion.div>
       )}
 
