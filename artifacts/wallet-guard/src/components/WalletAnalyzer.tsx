@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Search, Loader2, QrCode } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import TronAnalysisReport from "@/components/TronAnalysisReport";
 import QRScannerDialog from "@/components/QRScannerDialog";
 import { toast } from "sonner";
@@ -34,11 +33,8 @@ const tronBase58ToAbiParam = (address: string): string => {
     n = n * 58n + BigInt(idx);
   }
   // 25 bytes: [0x41 prefix][20-byte address][4-byte checksum]
-  // Encoded as 50 hex chars
   const hex = n.toString(16).padStart(50, "0");
-  // Take only the 20-byte address part (chars 2-42, skipping "41" prefix)
   const addressHex = hex.slice(2, 42);
-  // ABI-encode as address: left-pad to 32 bytes (64 hex chars)
   return addressHex.padStart(64, "0");
 };
 
@@ -199,7 +195,6 @@ const WalletAnalyzer = () => {
       } else if (t.from === addr) {
         totalOutUSDT += amount;
       }
-      // TronGrid doesn't expose exchange tags; approximate via known exchange patterns
       if (t.from) uniqueWallets.add(t.from);
       if (t.to) uniqueWallets.add(t.to);
     });
@@ -253,55 +248,63 @@ const WalletAnalyzer = () => {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4">
-      <div className="flex flex-col items-center gap-6">
-        <div className="text-center mt-8">
-          <h1 className="text-3xl font-bold tracking-tight">CoinCash WalletGuard</h1>
-          <p className="text-muted-foreground mt-2 text-sm">
-            Analiza billeteras TRON y detecta riesgos en transacciones USDT (TRC20)
-          </p>
+    <div className="flex flex-col items-center w-full max-w-4xl px-4 py-8 mx-auto">
+      {/* Header */}
+      <div className="text-center mb-8 w-full">
+        <h1 className="text-4xl font-extrabold tracking-tight lg:text-5xl mb-1">
+          Coin<span className="text-primary">Cash</span>
+        </h1>
+        <div
+          className="flex items-center justify-center gap-1.5 mb-8"
+          style={{ color: "rgb(31, 189, 20)", fontSize: "20px" }}
+        >
+          WalletGuard
         </div>
 
-        <Card className="w-full max-w-2xl">
-          <CardContent className="pt-6">
-            <form onSubmit={handleAnalyze} className="flex gap-2">
+        {/* Search Card */}
+        <div className="rounded-xl border w-full max-w-2xl mx-auto shadow-sm border-border/50 bg-card/50 backdrop-blur-sm">
+          <div className="p-6">
+            <form onSubmit={handleAnalyze} className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
                 <Input
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Ingresa dirección TRON (ej: TXyz...)"
-                  className="pr-10 font-mono text-sm"
+                  placeholder="Ingrese dirección TRC20 (ej. T...)"
+                  className="pl-10 h-12 bg-background border-input focus-visible:ring-primary text-base"
                   disabled={isAnalyzing}
                 />
               </div>
               <Button
                 type="button"
                 variant="outline"
-                size="icon"
                 onClick={() => setIsScannerOpen(true)}
                 disabled={isAnalyzing}
-                title="Escanear QR"
+                className="h-12 px-4 shrink-0 border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground"
               >
-                <QrCode className="w-4 h-4" />
+                <QrCode className="w-5 h-5 mr-2" />
+                Escanear QR
               </Button>
-              <Button type="submit" disabled={isAnalyzing}>
+              <Button
+                type="submit"
+                disabled={isAnalyzing}
+                className="h-12 w-full sm:w-auto min-w-[140px] px-8"
+              >
                 {isAnalyzing ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Analizando
+                    Analizando...
                   </>
                 ) : (
-                  <>
-                    <Search className="w-4 h-4 mr-2" />
-                    Analizar
-                  </>
+                  "Analizar dirección"
                 )}
               </Button>
             </form>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
+      {/* Report or placeholder */}
       <div className="w-full">
         {showReport && reportData ? (
           <TronAnalysisReport reportData={reportData} />

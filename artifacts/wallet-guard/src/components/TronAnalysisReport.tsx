@@ -2,7 +2,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { motion } from "framer-motion";
-import { Shield, AlertTriangle, ArrowRightLeft, Clock, History, Ban, ShieldAlert } from "lucide-react";
+import { History, AlertTriangle, ArrowRightLeft, Ban, ShieldAlert } from "lucide-react";
 
 interface ReportData {
   address: string;
@@ -67,29 +67,23 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
 
   let riskLevel = "";
   let riskColor = "";
-  let riskBadgeVariant: "default" | "secondary" | "destructive" | "outline" = "default";
 
   if (isFrozen) {
     riskScore = 100;
     riskLevel = "RISK LEVEL: CRITICAL";
     riskColor = "text-red-500";
-    riskBadgeVariant = "destructive";
   } else if (riskScore <= 25) {
     riskLevel = "Riesgo Bajo";
     riskColor = "text-green-500";
-    riskBadgeVariant = "default";
   } else if (riskScore <= 50) {
     riskLevel = "Riesgo Moderado";
     riskColor = "text-yellow-500";
-    riskBadgeVariant = "secondary";
   } else if (riskScore <= 75) {
     riskLevel = "Riesgo Alto";
     riskColor = "text-orange-500";
-    riskBadgeVariant = "outline";
   } else {
     riskLevel = "Riesgo Severo";
     riskColor = "text-red-500";
-    riskBadgeVariant = "destructive";
   }
 
   const formattedCreationDate = creationDate.toLocaleDateString("es-ES", {
@@ -115,15 +109,11 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
     maximumFractionDigits: 2,
   });
 
-  const circumference = 2 * Math.PI * 45;
-  const strokeDashoffset = circumference - (riskScore / 100) * circumference;
-
-  const getRiskStrokeColor = () => {
-    if (riskScore <= 25) return "#22c55e";
-    if (riskScore <= 50) return "#eab308";
-    if (riskScore <= 75) return "#f97316";
-    return "#ef4444";
-  };
+  // Which risk segments are active (full opacity vs 20%)
+  const seg1Active = riskScore > 0;   // Bajo    0-25
+  const seg2Active = riskScore > 25;  // Moderado 25-50
+  const seg3Active = riskScore > 50;  // Alto     50-75
+  const seg4Active = riskScore > 75;  // Severo   75-100
 
   return (
     <motion.div
@@ -132,11 +122,6 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
       transition={{ duration: 0.5 }}
       className="w-full max-w-4xl mx-auto space-y-6 mt-8"
     >
-      {/* Address */}
-      <div className="text-center">
-        <p className="text-xs text-muted-foreground font-mono break-all">{address}</p>
-      </div>
-
       {/* USDT Frozen Warning */}
       {isFrozen && (
         <motion.div
@@ -160,9 +145,10 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
 
       {/* Network Info & Risk Score */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="bg-card">
+        {/* Network Info */}
+        <Card className="rounded-xl border bg-card shadow">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground uppercase tracking-wider">
+            <CardTitle className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
               Información de Red
             </CardTitle>
           </CardHeader>
@@ -178,157 +164,114 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                   }}
                 />
               </div>
-              <div className="space-y-1">
+              <div>
                 <div className="text-2xl font-bold">Red: TRON</div>
                 <div className="text-sm text-muted-foreground">USDT (TRC20)</div>
-                <div className="flex items-center gap-2 pt-1">
-                  <span className="text-xs text-muted-foreground">Tipo de cuenta:</span>
-                  <Badge variant="outline" className="text-xs">{accountType}</Badge>
-                </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-card">
+        {/* Risk Score — linear 4-segment bar */}
+        <Card className="rounded-xl border bg-card shadow">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <Shield className="w-4 h-4" />
+            <CardTitle className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
               Puntuación de Riesgo
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-6">
-              <div className="relative w-24 h-24">
-                <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="45"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="8"
-                    className="text-muted/30"
-                  />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="45"
-                    fill="none"
-                    stroke={getRiskStrokeColor()}
-                    strokeWidth="8"
-                    strokeDasharray={circumference}
-                    strokeDashoffset={strokeDashoffset}
-                    strokeLinecap="round"
-                    style={{ transition: "stroke-dashoffset 1s ease-in-out" }}
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className={`text-2xl font-bold ${riskColor}`}>{riskScore}</span>
-                </div>
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <span className={`text-3xl font-bold ${riskColor}`}>{riskScore}/100</span>
+                <span className={`text-sm font-medium ${riskColor}`}>{riskLevel}</span>
               </div>
-              <div>
-                <div className={`text-xl font-bold ${riskColor}`}>{riskLevel}</div>
-                <Badge variant={riskBadgeVariant} className="mt-1">
-                  {riskScore}/100
-                </Badge>
+              {/* 4-segment bar with position indicator */}
+              <div className="w-full h-3 bg-secondary rounded-full overflow-hidden flex relative">
+                <div className={`h-full bg-green-500 w-1/4 ${seg1Active ? "" : "opacity-20"}`} />
+                <div className={`h-full bg-yellow-500 w-1/4 ${seg2Active ? "" : "opacity-20"}`} />
+                <div className={`h-full bg-orange-500 w-1/4 ${seg3Active ? "" : "opacity-20"}`} />
+                <div className={`h-full bg-red-500 w-1/4 ${seg4Active ? "" : "opacity-20"}`} />
+                <div
+                  className="absolute top-0 bottom-0 w-1 bg-background"
+                  style={{ left: `calc(${riskScore}% - 2px)` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>Bajo</span>
+                <span>Moderado</span>
+                <span>Alto</span>
+                <span>Severo</span>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Balance */}
-      <Card>
+      {/* Activity Summary */}
+      <Card className="rounded-xl border bg-card shadow">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-muted-foreground uppercase tracking-wider">
-            Balance Actual
+          <CardTitle className="font-semibold tracking-tight flex items-center gap-2 text-lg">
+            <History className="w-5 h-5 text-primary" />
+            Resumen de Actividad
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-4xl font-bold">${formattedBalance}</div>
-          <div className="text-sm text-muted-foreground mt-1">USDT (TRC20)</div>
-        </CardContent>
-      </Card>
+          {/* Top stats grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
+              <span className="text-xs text-muted-foreground">Estado</span>
+              <div className="font-semibold flex items-center gap-1.5 text-green-500">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                Activo
+              </div>
+            </div>
+            <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
+              <span className="text-xs text-muted-foreground">Balance Total</span>
+              <div className="font-semibold text-lg">{formattedBalance} USDT</div>
+            </div>
+            <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
+              <span className="text-xs text-muted-foreground">Wallet creada</span>
+              <div className="font-medium text-sm">{formattedCreationDate}</div>
+            </div>
+            <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
+              <span className="text-xs text-muted-foreground">Días de creada</span>
+              <div className="font-medium text-sm">{daysSinceCreation} días</div>
+            </div>
+          </div>
 
-      {/* Transaction Stats */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <ArrowRightLeft className="w-5 h-5" />
-            Estadísticas de Transacciones
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="text-center p-4 rounded-lg bg-muted/30">
-              <div className="text-2xl font-bold">{totalTx.toLocaleString()}</div>
-              <div className="text-sm text-muted-foreground">Total Transacciones</div>
+          {/* Entradas / Salidas */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div className="bg-background/50 p-4 rounded-lg border border-border/50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-500/10 text-green-500 rounded-full">
+                  <ArrowRightLeft className="w-5 h-5 rotate-90" />
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">Entradas Totales</div>
+                  <div className="font-bold text-xl">{formattedIn} USDT</div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-medium">{txIn.toLocaleString()} Txns</div>
+              </div>
             </div>
-            <div className="text-center p-4 rounded-lg bg-green-500/10">
-              <div className="text-2xl font-bold text-green-500">{txIn.toLocaleString()}</div>
-              <div className="text-sm text-muted-foreground">Entrantes</div>
-            </div>
-            <div className="text-center p-4 rounded-lg bg-red-500/10">
-              <div className="text-2xl font-bold text-red-500">{txOut.toLocaleString()}</div>
-              <div className="text-sm text-muted-foreground">Salientes</div>
+            <div className="bg-background/50 p-4 rounded-lg border border-border/50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-500/10 text-red-500 rounded-full">
+                  <ArrowRightLeft className="w-5 h-5 -rotate-90" />
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">Salidas Totales</div>
+                  <div className="font-bold text-xl">{formattedOut} USDT</div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-medium">{txOut.toLocaleString()} Txns</div>
+              </div>
             </div>
           </div>
         </CardContent>
       </Card>
-
-      {/* Volume & Dates */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <History className="w-5 h-5" />
-              Volumen USDT (Últimas 150 Tx)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Total Recibido</span>
-              <span className="font-semibold text-green-500">${formattedIn}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Total Enviado</span>
-              <span className="font-semibold text-red-500">${formattedOut}</span>
-            </div>
-            <div className="flex justify-between items-center border-t pt-3">
-              <span className="text-sm text-muted-foreground">Contrapartes Únicas</span>
-              <span className="font-semibold">{uniqueWalletsCount}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Con Exchanges</span>
-              <span className="font-semibold">{exchangeInteractions}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Clock className="w-5 h-5" />
-              Cronología
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Fecha de Creación</span>
-              <span className="font-semibold">{formattedCreationDate}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Antigüedad</span>
-              <span className="font-semibold">{daysSinceCreation} días</span>
-            </div>
-            <div className="flex justify-between items-center border-t pt-3">
-              <span className="text-sm text-muted-foreground">Última Transacción</span>
-              <span className="font-semibold">{formattedLastTxDate}</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Risk Factors */}
       <Card>
@@ -410,7 +353,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
         </CardContent>
       </Card>
 
-      {/* Sanctions section */}
+      {/* Sanctions */}
       <Card className="border-red-500/20">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-lg text-red-500">
@@ -429,19 +372,42 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow>
-                  <TableCell colSpan={3} className="text-center text-muted-foreground py-4">
-                    No se encontraron sanciones ni congelamientos para esta dirección.
-                  </TableCell>
-                </TableRow>
+                {isFrozen ? (
+                  <TableRow>
+                    <TableCell className="font-medium text-red-500">USDT Blacklist</TableCell>
+                    <TableCell>{formattedLastTxDate}</TableCell>
+                    <TableCell>
+                      <Badge variant="destructive">Congelada</Badge>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground py-4">
+                      No se encontraron sanciones ni congelamientos para esta dirección.
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
 
+      {/* Address + account type info */}
+      <div className="bg-muted/30 p-4 rounded-lg border border-border/50 flex items-start gap-3">
+        <ShieldAlert className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
+        <div className="space-y-1 flex-1">
+          <p className="text-xs text-muted-foreground font-mono break-all">{address}</p>
+          <p className="text-xs text-muted-foreground">
+            Tipo de cuenta: <span className="text-foreground font-medium">{accountType}</span>
+            {" · "}Última transacción: <span className="text-foreground font-medium">{formattedLastTxDate}</span>
+            {" · "}Contrapartes: <span className="text-foreground font-medium">{uniqueWalletsCount}</span>
+          </p>
+        </div>
+      </div>
+
       {/* Legal Notice */}
-      <div className="bg-muted/30 p-4 rounded-lg border border-border/50 mt-8 mb-12 flex items-start gap-3">
+      <div className="bg-muted/30 p-4 rounded-lg border border-border/50 mb-12 flex items-start gap-3">
         <ShieldAlert className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground leading-relaxed">
           <strong className="text-foreground">Aviso Legal:</strong> La información proporcionada en
