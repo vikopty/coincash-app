@@ -139,6 +139,13 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
     fetchRelayStatus().then(s => setRelayActive(s.relayerActive)).catch(() => {});
   }, [wallet.address, loadWalletData]);
 
+  // ── Auto-retry every 3 seconds on connection failure ──────────────────────
+  useEffect(() => {
+    if (!loadError) return;
+    const id = setTimeout(() => loadWalletData({ silent: false }), 3_000);
+    return () => clearTimeout(id);
+  }, [loadError, loadWalletData]);
+
   // ── Auto-refresh every 60 seconds while the sheet is open ─────────────────
   useEffect(() => {
     const id = setInterval(() => loadWalletData({ silent: true }), 60_000);
@@ -313,18 +320,23 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
               </div>
             )}
 
-            {/* Error banner — shown after all retries fail */}
+            {/* Connection banner — shown while retrying after all nodes failed */}
             {loadError && !loading && (
               <div className="flex items-center gap-2.5 rounded-2xl px-3 py-2.5 mb-3"
-                style={{ background: `${DANGER}0C`, border: `1px solid ${DANGER}25` }}>
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0" style={{ color: DANGER }} />
-                <p className="text-[10px] font-medium flex-1" style={{ color: "rgba(255,255,255,0.45)" }}>
-                  Error al conectar con la blockchain.
-                </p>
+                style={{ background: `${BLUE}10`, border: `1px solid ${BLUE}22` }}>
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" style={{ color: BLUE }} />
+                <div className="flex-1">
+                  <p className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.6)" }}>
+                    Conectando a la red TRON…
+                  </p>
+                  <p className="text-[9px] mt-0.5" style={{ color: "rgba(255,255,255,0.3)" }}>
+                    Probando nodos alternativos, reintentando en 3 s
+                  </p>
+                </div>
                 <button onClick={() => loadWalletData()}
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
-                  style={{ background: `${DANGER}20`, color: DANGER }}>
-                  Reintentar
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-lg shrink-0"
+                  style={{ background: `${BLUE}20`, color: BLUE }}>
+                  Ahora
                 </button>
               </div>
             )}
@@ -333,8 +345,11 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
             {loading ? (
               <div className="flex flex-col items-center justify-center py-12 gap-3">
                 <Loader2 className="h-8 w-8 animate-spin" style={{ color: GREEN }} />
-                <p className="text-[11px] font-medium text-center" style={{ color: "rgba(255,255,255,0.35)" }}>
-                  Actualizando información de la blockchain…
+                <p className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.55)" }}>
+                  Conectando a la red TRON…
+                </p>
+                <p className="text-[10px] text-center" style={{ color: "rgba(255,255,255,0.25)" }}>
+                  Verificando nodo disponible
                 </p>
               </div>
             ) : (

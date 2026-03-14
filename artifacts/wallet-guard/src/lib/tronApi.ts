@@ -1,23 +1,68 @@
 // @ts-nocheck — noble/secp256k1 v3 ESM resolution quirks; runtime correct
 import { sign as secp256k1Sign } from "@noble/secp256k1";
 
-const BASE = "https://api.trongrid.io";
-const KEY  = import.meta.env.VITE_TRON_API_KEY ?? "";
+const KEY = import.meta.env.VITE_TRON_API_KEY ?? "";
 
 // Both known mainnet USDT TRC20 contract addresses (TR7... is the primary Tether contract)
 export const USDT_CONTRACT  = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 export const USDT_CONTRACT2 = "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj";
 
-// ── Rate limiter (100 ms gap) ─────────────────────────────────────────────────
+// ── Fallback node list ────────────────────────────────────────────────────────
+// Tried in order; if one fails (network error, timeout, 5xx) the next is used.
+const NODES = [
+  { base: "https://api.trongrid.io",          key: true  },
+  { base: "https://tron-api.publicnode.com",   key: false },
+  { base: "https://api.tronstack.io",          key: false },
+  { base: "https://rpc.ankr.com/tron",         key: false },
+];
+
+// Index of the last node that responded successfully (start at 0 = primary)
+let _activeNode = 0;
+
+// Which node index is currently live (for status display)
+export function getActiveNodeIndex(): number { return _activeNode; }
+export function getNodeCount(): number       { return NODES.length; }
+export function getActiveNodeBase(): string  { return NODES[_activeNode].base; }
+
+// ── Resilient fetch with node fallback ───────────────────────────────────────
+// Tries each node in sequence (starting from last known-good) with a 5s timeout.
+// Falls back on network errors and 5xx server errors; passes through 2xx-4xx.
+async function tronFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const order = NODES.map((_, i) => (i + _activeNode) % NODES.length);
+  let lastErr: Error | null = null;
+
+  for (const idx of order) {
+    const node = NODES[idx];
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5_000);
+    try {
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (node.key && KEY) hdrs["TRON-PRO-API-KEY"] = KEY;
+      const res = await fetch(`${node.base}${path}`, {
+        ...init,
+        headers: { ...hdrs, ...(init.headers as Record<string, string> ?? {}) },
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (res.status < 500) {  // 2xx/3xx/4xx → server is alive, use result
+        _activeNode = idx;
+        return res;
+      }
+      lastErr = new Error(`Node ${idx} returned ${res.status}`);
+    } catch (e: any) {
+      clearTimeout(timer);
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error("All TRON nodes unavailable");
+}
+
+// ── Rate limiter (110 ms gap) ─────────────────────────────────────────────────
 let _next = 0;
 async function rateWait(): Promise<void> {
   const now = Date.now();
   if (now < _next) await new Promise<void>(r => setTimeout(r, _next - now));
   _next = Date.now() + 110;
-}
-
-function apiHeaders(): Record<string, string> {
-  return { "TRON-PRO-API-KEY": KEY, "Content-Type": "application/json" };
 }
 
 // ── Hex helpers ───────────────────────────────────────────────────────────────
@@ -105,9 +150,8 @@ async function fetchTRC20Balance(walletAddress: string, contractAddress: string)
     // ABI-encode balanceOf(address): 20-byte address, left-padded to 32 bytes
     const addrParam = walletHex.slice(2).padStart(64, "0"); // drop "41", pad
 
-    const res = await fetch(`${BASE}/wallet/triggerconstantcontract`, {
+    const res = await tronFetch("/wallet/triggerconstantcontract", {
       method: "POST",
-      headers: apiHeaders(),
       body: JSON.stringify({
         owner_address: walletHex,
         contract_address: contractHex,
@@ -135,9 +179,7 @@ export async function fetchAccountInfo(address: string): Promise<AccountInfo> {
   const [accountRes, balanceOf1, balanceOf2] = await Promise.all([
     (async () => {
       await rateWait();
-      const res = await fetch(`${BASE}/v1/accounts/${address}`, {
-        headers: apiHeaders(),
-      });
+      const res = await tronFetch(`/v1/accounts/${address}`);
       return res.ok ? res.json() : null;
     })(),
     fetchTRC20Balance(address, USDT_CONTRACT),
@@ -175,9 +217,8 @@ export async function fetchAccountInfo(address: string): Promise<AccountInfo> {
 // ── Fetch TRX transactions ────────────────────────────────────────────────────
 export async function fetchTRXTransactions(address: string, limit = 20): Promise<TxRecord[]> {
   await rateWait();
-  const res = await fetch(
-    `${BASE}/v1/accounts/${address}/transactions?limit=${limit}&only_confirmed=true`,
-    { headers: apiHeaders() }
+  const res = await tronFetch(
+    `/v1/accounts/${address}/transactions?limit=${limit}&only_confirmed=true`
   );
   if (!res.ok) throw new Error(`TronGrid transactions error ${res.status}`);
   const json = await res.json();
@@ -219,9 +260,8 @@ async function fetchUSDTTxForContract(
   address: string, contractAddress: string, limit = 20
 ): Promise<TxRecord[]> {
   await rateWait();
-  const res = await fetch(
-    `${BASE}/v1/accounts/${address}/transactions/trc20?limit=${limit}&contract_address=${contractAddress}&only_confirmed=true`,
-    { headers: apiHeaders() }
+  const res = await tronFetch(
+    `/v1/accounts/${address}/transactions/trc20?limit=${limit}&contract_address=${contractAddress}&only_confirmed=true`
   );
   if (!res.ok) return [];
   const json = await res.json();
@@ -279,9 +319,8 @@ async function broadcastSigned(tx: any, privKeyHex: string): Promise<string> {
   const signed = { ...tx, signature: [sigHex] };
 
   await rateWait();
-  const res = await fetch(`${BASE}/wallet/broadcasttransaction`, {
+  const res = await tronFetch("/wallet/broadcasttransaction", {
     method: "POST",
-    headers: apiHeaders(),
     body: JSON.stringify(signed),
   });
   if (!res.ok) throw new Error(`Broadcast error ${res.status}`);
@@ -321,9 +360,7 @@ async function fetchLivePrices(): Promise<{ trxUsdt: number; energySun: number }
     }).catch(() => null),
     (async () => {
       await rateWait();
-      return fetch(`${BASE}/wallet/getchainparameters`, {
-        headers: apiHeaders(),
-      }).catch(() => null);
+      return tronFetch("/wallet/getchainparameters").catch(() => null);
     })(),
   ]);
 
@@ -372,9 +409,8 @@ export async function sendTRX(
   const amountSun = Math.round(amountTrx * 1_000_000);
 
   await rateWait();
-  const res = await fetch(`${BASE}/wallet/createtransaction`, {
+  const res = await tronFetch("/wallet/createtransaction", {
     method: "POST",
-    headers: apiHeaders(),
     body: JSON.stringify({ owner_address: fromHex, to_address: toHex, amount: amountSun }),
   });
   if (!res.ok) throw new Error(`Error creando tx TRX (${res.status})`);
@@ -400,9 +436,8 @@ export async function sendUSDT(
   const parameter  = toParam + amtParam;
 
   await rateWait();
-  const res = await fetch(`${BASE}/wallet/triggersmartcontract`, {
+  const res = await tronFetch("/wallet/triggersmartcontract", {
     method: "POST",
-    headers: apiHeaders(),
     body: JSON.stringify({
       owner_address: fromHex,
       contract_address: contractHex,
@@ -433,9 +468,8 @@ async function buildAndSignUSDTTx(
   const parameter   = toParam + amtParam;
 
   await rateWait();
-  const res = await fetch(`${BASE}/wallet/triggersmartcontract`, {
+  const res = await tronFetch("/wallet/triggersmartcontract", {
     method: "POST",
-    headers: apiHeaders(),
     body: JSON.stringify({
       owner_address: fromHex,
       contract_address: contractHex,
