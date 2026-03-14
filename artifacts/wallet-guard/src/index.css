@@ -136,15 +136,16 @@
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(255,255,255, .04);
-  --elevate-2: rgba(255,255,255, .09);
+  --elevate-1: rgba(255,255,255, .03);
+  --elevate-2: rgba(255,255,255, .06);
 
-  --background: 0 0% 0%;
-  --foreground: 0 0% 98%;
-  --border: 0 0% 10%;
-  --card: 0 0% 4%;
-  --card-foreground: 0 0% 98%;
-  --card-border: 0 0% 12%;
+  /* Fintech palette: bg #0B0F14, card #121821 */
+  --background: 213 30% 6%;
+  --foreground: 0 0% 96%;
+  --border: 213 20% 14%;
+  --card: 215 28% 10%;
+  --card-foreground: 0 0% 96%;
+  --card-border: 213 18% 15%;
   --sidebar: 0 0% 0%;
   --sidebar-foreground: 240 4.8% 95.9%;
   --sidebar-border: 0 0% 10%;

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Eye, Download, Trash2, ScanSearch, Copy, CheckCheck } from "lucide-react";
+import { Plus, Eye, Download, Trash2, ScanSearch, Copy, CheckCheck, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 export interface SavedWallet {
@@ -11,6 +11,13 @@ export interface SavedWallet {
 }
 
 const STORAGE_KEY = "wg_wallets";
+
+const BG     = "#0B0F14";
+const CARD   = "#121821";
+const GREEN  = "#19C37D";
+const BLUE   = "#3B82F6";
+const BORDER = "rgba(255,255,255,0.06)";
+const SHADOW = "0 4px 24px rgba(0,0,0,0.45)";
 
 function loadWallets(): SavedWallet[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
@@ -25,12 +32,18 @@ interface WalletsPageProps {
 
 type Modal = "watch" | "import" | null;
 
+const ACTIONS: { label: string; icon: React.FC<React.SVGProps<SVGSVGElement>>; modal: Modal }[] = [
+  { label: "Watch wallet",  icon: Eye,      modal: "watch" },
+  { label: "Import wallet", icon: Download, modal: "import" },
+  { label: "Nueva",         icon: Plus,     modal: "watch" },
+];
+
 const WalletsPage = ({ onScan }: WalletsPageProps) => {
   const [wallets, setWallets] = useState<SavedWallet[]>(loadWallets);
-  const [modal, setModal] = useState<Modal>(null);
-  const [name, setName] = useState("");
+  const [modal, setModal]     = useState<Modal>(null);
+  const [name, setName]       = useState("");
   const [address, setAddress] = useState("");
-  const [copied, setCopied] = useState<string | null>(null);
+  const [copied, setCopied]   = useState<string | null>(null);
 
   useEffect(() => { saveWallets(wallets); }, [wallets]);
 
@@ -40,30 +53,19 @@ const WalletsPage = ({ onScan }: WalletsPageProps) => {
     const trimAddr = address.trim();
     const trimName = name.trim() || `Wallet ${wallets.length + 1}`;
     if (!isValidTron(trimAddr)) {
-      toast.error("Dirección TRON inválida. Debe comenzar con T y tener 34 caracteres.");
+      toast.error("Dirección TRON inválida.");
       return;
     }
     if (wallets.find(w => w.address === trimAddr)) {
       toast.error("Esta dirección ya está guardada.");
       return;
     }
-    const newWallet: SavedWallet = {
-      id: crypto.randomUUID(),
-      name: trimName,
-      address: trimAddr,
-      type,
-      addedAt: Date.now(),
-    };
-    setWallets(prev => [newWallet, ...prev]);
-    setModal(null);
-    setName(""); setAddress("");
+    setWallets(prev => [{ id: crypto.randomUUID(), name: trimName, address: trimAddr, type, addedAt: Date.now() }, ...prev]);
+    setModal(null); setName(""); setAddress("");
     toast.success(`Wallet "${trimName}" añadida.`);
   };
 
-  const remove = (id: string) => {
-    setWallets(prev => prev.filter(w => w.id !== id));
-    toast.success("Wallet eliminada.");
-  };
+  const remove = (id: string) => { setWallets(prev => prev.filter(w => w.id !== id)); toast.success("Wallet eliminada."); };
 
   const copy = (addr: string) => {
     navigator.clipboard.writeText(addr);
@@ -73,135 +75,141 @@ const WalletsPage = ({ onScan }: WalletsPageProps) => {
 
   const short = (addr: string) => `${addr.slice(0, 8)}…${addr.slice(-6)}`;
 
+  const avatarColor = (type: "watch" | "imported") => type === "imported" ? "#A78BFA" : BLUE;
+
   return (
-    <div className="flex flex-col gap-5 px-4 py-6 pb-24">
-      <div className="flex items-center justify-between">
+    <div style={{ background: BG, minHeight: "100vh" }} className="flex flex-col pb-24">
+
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 pt-10 pb-5">
         <div>
           <h1 className="text-xl font-bold text-white">Wallets</h1>
-          <p className="text-xs text-white/40 mt-0.5">{wallets.length} dirección{wallets.length !== 1 ? "es" : ""} guardada{wallets.length !== 1 ? "s" : ""}</p>
+          <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>
+            {wallets.length} dirección{wallets.length !== 1 ? "es" : ""} guardada{wallets.length !== 1 ? "s" : ""}
+          </p>
         </div>
+        <button
+          onClick={() => setModal("watch")}
+          className="flex h-9 w-9 items-center justify-center rounded-full"
+          style={{ background: GREEN, boxShadow: `0 0 16px ${GREEN}44` }}>
+          <Plus className="h-4 w-4 text-black" />
+        </button>
       </div>
 
       {/* Action buttons */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: "Watch wallet",   icon: Eye,      action: () => setModal("watch") },
-          { label: "Import wallet",  icon: Download, action: () => setModal("import") },
-          { label: "Nueva wallet",   icon: Plus,     action: () => setModal("watch") },
-        ].map(({ label, icon: Icon, action }) => (
-          <button
-            key={label}
-            onClick={action}
-            className="flex flex-col items-center gap-2 rounded-xl border border-white/8 bg-white/4 py-4 px-2 transition-colors active:bg-white/10"
-          >
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#00ff88]/10">
-              <Icon className="h-4 w-4 text-[#00ff88]" />
+      <div className="px-4 grid grid-cols-3 gap-3 mb-6">
+        {ACTIONS.map(({ label, icon: Icon, modal: m }) => (
+          <button key={label} onClick={() => setModal(m)}
+            className="flex flex-col items-center gap-2.5 rounded-2xl py-5 px-2 transition-opacity active:opacity-70"
+            style={{ background: CARD, border: `1px solid ${BORDER}`, boxShadow: SHADOW }}>
+            <div className="flex h-11 w-11 items-center justify-center rounded-full" style={{ background: `${GREEN}18` }}>
+              <Icon className="h-5 w-5" style={{ color: GREEN }} />
             </div>
-            <span className="text-[11px] text-white/60 text-center leading-tight">{label}</span>
+            <span className="text-xs font-medium text-white text-center leading-tight">{label}</span>
           </button>
         ))}
       </div>
 
       {/* Wallet list */}
       {wallets.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-14 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/4">
-            <Eye className="h-6 w-6 text-white/30" />
+        <div className="flex flex-col items-center gap-3 py-20 text-center px-8">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Wallet className="h-7 w-7" style={{ color: "rgba(255,255,255,0.2)" }} />
           </div>
-          <p className="text-sm text-white/40">Sin wallets guardadas</p>
-          <p className="text-xs text-white/25">Añade una dirección TRON para monitorearla</p>
+          <p className="text-sm font-medium text-white">Sin wallets guardadas</p>
+          <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>Añade una dirección TRON para monitorear su seguridad</p>
+          <button onClick={() => setModal("watch")}
+            className="mt-2 rounded-full px-6 py-2.5 text-sm font-semibold text-black"
+            style={{ background: GREEN }}>
+            Añadir wallet
+          </button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {wallets.map(w => (
-            <div key={w.id} className="rounded-xl border border-white/8 bg-white/4 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-white truncate">{w.name}</span>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                      w.type === "imported" ? "bg-purple-500/20 text-purple-300" : "bg-cyan-500/20 text-cyan-300"
-                    }`}>
-                      {w.type === "imported" ? "Importada" : "Watch"}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-1.5">
-                    <span className="text-xs text-white/40 font-mono">{short(w.address)}</span>
-                    <button onClick={() => copy(w.address)} className="text-white/30 hover:text-white/60">
-                      {copied === w.address
-                        ? <CheckCheck className="h-3 w-3 text-green-400" />
-                        : <Copy className="h-3 w-3" />}
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-white/25 mt-1">
-                    {new Date(w.addedAt).toLocaleDateString("es-ES")}
-                  </p>
+        <div className="px-4 rounded-2xl overflow-hidden mx-0" style={{ background: CARD, border: `1px solid ${BORDER}`, boxShadow: SHADOW, margin: "0 16px" }}>
+          {wallets.map((w, i) => (
+            <div key={w.id} className="flex items-center gap-3 px-4 py-4"
+              style={{ borderBottom: i < wallets.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+              {/* Avatar */}
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold"
+                style={{ background: `${avatarColor(w.type)}22`, color: avatarColor(w.type) }}>
+                {w.name.slice(0, 1).toUpperCase()}
+              </div>
+
+              {/* Info */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-white truncate">{w.name}</span>
+                  <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase"
+                    style={{ background: `${avatarColor(w.type)}22`, color: avatarColor(w.type) }}>
+                    {w.type === "imported" ? "Importada" : "Watch"}
+                  </span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => onScan(w.address)}
-                    title="Analizar en Scanner"
-                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#00ff88]/10 text-[#00ff88] hover:bg-[#00ff88]/20 transition-colors"
-                  >
-                    <ScanSearch className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => remove(w.id)}
-                    title="Eliminar"
-                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
-                  >
-                    <Trash2 className="h-4 w-4" />
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-[11px] font-mono" style={{ color: "rgba(255,255,255,0.38)" }}>{short(w.address)}</span>
+                  <button onClick={() => copy(w.address)}>
+                    {copied === w.address
+                      ? <CheckCheck className="h-3 w-3" style={{ color: GREEN }} />
+                      : <Copy className="h-3 w-3" style={{ color: "rgba(255,255,255,0.25)" }} />}
                   </button>
                 </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button onClick={() => onScan(w.address)}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl transition-opacity active:opacity-60"
+                  style={{ background: `${GREEN}18` }}>
+                  <ScanSearch className="h-4 w-4" style={{ color: GREEN }} />
+                </button>
+                <button onClick={() => remove(w.id)}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl transition-opacity active:opacity-60"
+                  style={{ background: "rgba(255,77,79,0.12)" }}>
+                  <Trash2 className="h-4 w-4" style={{ color: "#FF4D4F" }} />
+                </button>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Modal */}
+      {/* Bottom sheet modal */}
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/70 backdrop-blur-sm" onClick={() => setModal(null)}>
-          <div
-            className="w-full rounded-t-2xl border-t border-white/10 bg-[#0b0b0b] p-6 pb-10 space-y-4"
-            onClick={e => e.stopPropagation()}
-          >
-            <h2 className="text-base font-semibold text-white">
-              {modal === "watch" ? "Añadir Watch Wallet" : "Importar Wallet"}
+        <div className="fixed inset-0 z-50 flex items-end" style={{ background: "rgba(0,0,0,0.75)" }}
+          onClick={() => { setModal(null); setName(""); setAddress(""); }}>
+          <div className="w-full rounded-t-3xl p-6 pb-10 space-y-4"
+            style={{ background: "#141c27", borderTop: `1px solid ${BORDER}` }}
+            onClick={e => e.stopPropagation()}>
+
+            <div className="mx-auto mb-2 h-1 w-10 rounded-full" style={{ background: BORDER }} />
+
+            <h2 className="text-base font-bold text-white">
+              {modal === "watch" ? "Watch Wallet" : "Importar Wallet"}
             </h2>
-            <p className="text-xs text-white/40">
+            <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
               {modal === "watch"
                 ? "Monitorea una dirección TRON sin importar claves privadas."
-                : "Añade la dirección pública de tu wallet importada para verificación."}
+                : "Añade la dirección pública de tu wallet para verificación y análisis."}
             </p>
-            <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="Nombre (opcional)"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-[#00ff88]/50"
-              />
-              <input
-                type="text"
-                placeholder="Dirección TRON (T...)"
-                value={address}
-                onChange={e => setAddress(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-[#00ff88]/50 font-mono"
-              />
-            </div>
+
+            <input type="text" placeholder="Nombre (opcional)"
+              value={name} onChange={e => setName(e.target.value)}
+              className="w-full rounded-2xl px-4 py-3.5 text-sm text-white outline-none"
+              style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}` }} />
+
+            <input type="text" placeholder="Dirección TRON (T...)"
+              value={address} onChange={e => setAddress(e.target.value)}
+              className="w-full rounded-2xl px-4 py-3.5 text-sm text-white outline-none font-mono"
+              style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}` }} />
+
             <div className="flex gap-3 pt-1">
-              <button
-                onClick={() => { setModal(null); setName(""); setAddress(""); }}
-                className="flex-1 rounded-xl border border-white/10 py-3 text-sm text-white/60"
-              >
+              <button onClick={() => { setModal(null); setName(""); setAddress(""); }}
+                className="flex-1 rounded-2xl py-3.5 text-sm font-medium"
+                style={{ border: `1px solid ${BORDER}`, color: "rgba(255,255,255,0.5)" }}>
                 Cancelar
               </button>
-              <button
-                onClick={() => addWallet(modal === "import" ? "imported" : "watch")}
-                className="flex-1 rounded-xl py-3 text-sm font-semibold text-black"
-                style={{ background: "#00ff88" }}
-              >
+              <button onClick={() => addWallet(modal === "import" ? "imported" : "watch")}
+                className="flex-1 rounded-2xl py-3.5 text-sm font-bold text-black"
+                style={{ background: GREEN, boxShadow: `0 0 20px ${GREEN}44` }}>
                 Añadir
               </button>
             </div>

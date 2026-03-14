@@ -7,33 +7,40 @@ interface BottomNavProps {
   onChange: (tab: Tab) => void;
 }
 
+const GREEN  = "#19C37D";
+const CARD   = "#0e1520";
+const BORDER = "rgba(255,255,255,0.07)";
+
 const TABS: { id: Tab; label: string; Icon: React.FC<{ className?: string }> }[] = [
-  { id: "dashboard",   label: "Dashboard",    Icon: LayoutDashboard },
-  { id: "wallets",     label: "Wallets",      Icon: Wallet },
-  { id: "scanner",     label: "Scanner",      Icon: ScanSearch },
-  { id: "connections", label: "Connections",  Icon: Link2 },
-  { id: "settings",    label: "Settings",     Icon: Settings },
+  { id: "dashboard",   label: "Dashboard",   Icon: LayoutDashboard },
+  { id: "wallets",     label: "Wallets",     Icon: Wallet },
+  { id: "scanner",     label: "Scanner",     Icon: ScanSearch },
+  { id: "connections", label: "Connections", Icon: Link2 },
+  { id: "settings",    label: "Settings",    Icon: Settings },
 ];
 
 const BottomNav = ({ active, onChange }: BottomNavProps) => (
-  <nav className="fixed bottom-0 inset-x-0 z-50 flex items-center justify-around border-t border-white/8 bg-black/95 backdrop-blur-md pb-safe">
+  <nav
+    className="fixed bottom-0 inset-x-0 z-50 flex items-center justify-around"
+    style={{ background: CARD, borderTop: `1px solid ${BORDER}`, backdropFilter: "blur(20px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
     {TABS.map(({ id, label, Icon }) => {
       const isActive = active === id;
       return (
         <button
           key={id}
           onClick={() => onChange(id)}
-          className="relative flex flex-1 flex-col items-center gap-0.5 py-3 transition-colors"
-          style={{ color: isActive ? "#00ff88" : "rgba(255,255,255,0.4)" }}
+          className="relative flex flex-1 flex-col items-center gap-1 py-3 transition-all duration-150"
+          style={{ color: isActive ? GREEN : "rgba(255,255,255,0.35)" }}
         >
-          <Icon className="h-5 w-5" />
-          <span className="text-[10px] font-medium tracking-wide">{label}</span>
+          {/* Active dot indicator above icon */}
           {isActive && (
             <span
-              className="absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full"
-              style={{ background: "#00ff88" }}
+              className="absolute top-0 left-1/2 -translate-x-1/2 rounded-full"
+              style={{ width: 28, height: 2, background: GREEN, boxShadow: `0 0 8px ${GREEN}` }}
             />
           )}
+          <Icon className="h-5 w-5" />
+          <span className="text-[10px] font-medium tracking-wide">{label}</span>
         </button>
       );
     })}
