@@ -9,7 +9,7 @@ import { toast } from "sonner";
 export interface RiskyCounterparty {
   address: string;
   value: number;
-  label: "BLACKLISTED" | "STOLEN FUNDS" | "MONEY LAUNDERING" | "SANCTIONED WALLET";
+  label: "BLACKLISTED" | "STOLEN FUNDS" | "MONEY LAUNDERING" | "SANCTIONED WALLET" | "USDT BLACKLIST INTERACTION";
   level: "critical" | "high" | "medium";
 }
 
@@ -228,7 +228,7 @@ const WalletAnalyzer = () => {
       if (t.from) uniqueWallets.add(t.from);
       if (t.to) uniqueWallets.add(t.to);
 
-      // Counterparty risk: check the other party against the risk database
+      // Counterparty risk: check the other party against the static risk database
       const counterparty = t.to === addr ? t.from : t.to;
       if (counterparty && counterparty !== addr && RISK_DATABASE[counterparty]) {
         const risk = RISK_DATABASE[counterparty];
@@ -241,6 +241,49 @@ const WalletAnalyzer = () => {
         });
       }
     });
+
+    // 5. Live USDT blacklist check for unique counterparties not already flagged
+    try {
+      const alreadyFlagged = new Set(riskyCounterparties.map((r) => r.address));
+      const uniqueCounterparties = Array.from(
+        new Set(
+          transfers
+            .map((t: any) => (t.to === addr ? t.from : t.to))
+            .filter((cp: string) => cp && cp !== addr && !alreadyFlagged.has(cp))
+        )
+      ).slice(0, 30) as string[]; // cap at 30 to respect API rate limits
+
+      const blacklistResults = await Promise.allSettled(
+        uniqueCounterparties.map(async (cp) => {
+          const isBl = await checkUsdtBlacklist(cp);
+          return { cp, isBl };
+        })
+      );
+
+      blacklistResults.forEach((result) => {
+        if (result.status === "fulfilled" && result.value.isBl) {
+          const cpAddr = result.value.cp;
+          // Sum signed values across all transfers involving this counterparty
+          let totalValue = 0;
+          transfers.forEach((t: any) => {
+            const cp = t.to === addr ? t.from : t.to;
+            if (cp === cpAddr) {
+              const decimals = parseInt(t.token_info?.decimals ?? "6", 10);
+              const amount = parseFloat(t.value || "0") / Math.pow(10, decimals);
+              totalValue += t.to === addr ? amount : -amount;
+            }
+          });
+          riskyCounterparties.push({
+            address: cpAddr,
+            value: totalValue,
+            label: "USDT BLACKLIST INTERACTION",
+            level: "high",
+          });
+        }
+      });
+    } catch {
+      // Non-fatal: continue with whatever was already collected
+    }
 
     return {
       address: addr,
