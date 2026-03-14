@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "CoinCashWalletGuard"
+version = "1.0.0"
+id = "artifacts/wallet-guard"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+localPort = 25766
+name = "web"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/wallet-guard run dev"
+
+[services.env]
+PORT = "25766"
+BASE_PATH = "/"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/wallet-guard", "run", "build"]
+publicDir = "artifacts/wallet-guard/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
