@@ -451,9 +451,12 @@ const WalletAnalyzer = () => {
     <div className="flex flex-col items-center w-full max-w-4xl px-4 py-8 mx-auto">
       {/* Header */}
       <div className="text-center mb-6 w-full">
-        <h1 className="text-4xl font-extrabold tracking-tight lg:text-5xl mb-1">
-          Coin<span className="text-primary">Cash</span>
-        </h1>
+        <img
+          src="/coincash-logo.png"
+          alt="CoinCash"
+          className="mx-auto mb-1 block"
+          style={{ width: "220px", height: "auto" }}
+        />
         <div
           className="flex items-center justify-center gap-1.5 mb-6"
           style={{ color: "rgb(31, 189, 20)", fontSize: "20px" }}
