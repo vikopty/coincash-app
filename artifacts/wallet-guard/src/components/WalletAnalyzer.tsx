@@ -450,19 +450,20 @@ const WalletAnalyzer = () => {
   return (
     <div className="flex flex-col items-center w-full max-w-4xl px-4 py-8 mx-auto">
       {/* Header */}
-      <div className="text-center mb-6 w-full">
+      <div className="flex flex-col items-center justify-center mt-5 mb-6 w-full">
         <img
           src="/coincash-logo.png"
           alt="CoinCash"
-          className="mx-auto mb-1 block"
-          style={{ width: "220px", height: "auto" }}
+          className="block"
+          style={{ width: "260px", height: "auto" }}
         />
         <div
-          className="flex items-center justify-center gap-1.5 mb-6"
-          style={{ color: "rgb(31, 189, 20)", fontSize: "20px" }}
+          style={{ color: "#22c55e", fontSize: "28px", fontWeight: 500, marginTop: "-5px" }}
         >
           WalletGuard
         </div>
+      </div>
+      <div className="mb-6 w-full">
 
         {/* Search Card */}
         <div className="rounded-xl border w-full max-w-2xl mx-auto shadow-sm border-border/50 bg-card/50 backdrop-blur-sm">
