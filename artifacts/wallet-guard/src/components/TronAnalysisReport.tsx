@@ -70,7 +70,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
 
   if (isFrozen) {
     riskScore = 100;
-    riskLevel = "RISK LEVEL: CRITICAL";
+    riskLevel = "NIVEL DE RIESGO: CRÍTICO";
     riskColor = "text-red-500";
   } else if (riskScore <= 25) {
     riskLevel = "Riesgo Bajo";
@@ -133,12 +133,12 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
           <Ban className="h-7 w-7 shrink-0 text-red-500" />
           <div className="flex-1 space-y-0.5">
             <p className="font-bold uppercase tracking-widest text-red-500">
-              STATUS: BLOCKED
+              ESTADO: BLOQUEADO
             </p>
-            <p className="text-sm text-red-400">LABEL: USDT FROZEN ADDRESS</p>
+            <p className="text-sm text-red-400">ETIQUETA: DIRECCIÓN USDT CONGELADA</p>
           </div>
           <Badge variant="destructive" className="shrink-0 px-3 py-1 text-xs uppercase tracking-widest">
-            RISK LEVEL: CRITICAL
+            NIVEL DE RIESGO: CRÍTICO
           </Badge>
         </motion.div>
       )}
@@ -252,7 +252,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-sm font-medium">{txIn.toLocaleString()} Txns</div>
+                <div className="text-sm font-medium">{txIn.toLocaleString()} Transacciones</div>
               </div>
             </div>
             <div className="bg-background/50 p-4 rounded-lg border border-border/50 flex items-center justify-between">
@@ -266,7 +266,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-sm font-medium">{txOut.toLocaleString()} Txns</div>
+                <div className="text-sm font-medium">{txOut.toLocaleString()} Transacciones</div>
               </div>
             </div>
           </div>
