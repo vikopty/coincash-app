@@ -59,15 +59,37 @@ function TokenIcon({ token, size = 18 }: { token: Token; size?: number }) {
   );
 }
 
+// ── Wallet data cache (localStorage) ─────────────────────────────────────────
+// Stores the last known balances + transactions per address so the UI can
+// render instantly on open while the live fetch runs in the background.
+interface WalletCache {
+  info: AccountInfo;
+  txs:  TxRecord[];
+  ts:   number;
+}
+function cacheKey(addr: string)  { return `wg_wallet_cache_${addr}`; }
+function readCache(addr: string): WalletCache | null {
+  try { const r = localStorage.getItem(cacheKey(addr)); return r ? JSON.parse(r) : null; }
+  catch { return null; }
+}
+function writeCache(addr: string, info: AccountInfo, txs: TxRecord[]) {
+  try { localStorage.setItem(cacheKey(addr), JSON.stringify({ info, txs, ts: Date.now() })); }
+  catch {}
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function WalletDetailSheet({ wallet, onClose }: Props) {
   const [view, setView]           = useState<View>("overview");
   const [info, setInfo]           = useState<AccountInfo | null>(null);
   const [txs, setTxs]             = useState<TxRecord[]>([]);
-  // Unified loading state
-  const [loading, setLoading]       = useState(true);   // true on first open (full-screen spinner)
-  const [refreshing, setRefreshing] = useState(false);  // true during background refresh (banner)
-  const [loadError, setLoadError]   = useState(false);  // true if all retries failed
+  // loading = true only when there is NO cached data and the first fetch is in flight
+  const [loading, setLoading]       = useState(false);
+  // refreshing = subtle indicator shown during every background refresh
+  const [refreshing, setRefreshing] = useState(false);
+  // loadError = true only after all 4 fallback nodes failed; hides when retry succeeds
+  const [loadError, setLoadError]   = useState(false);
+  // ts of the last successful live fetch (for "last updated X ago" display)
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [copied, setCopied]       = useState(false);
 
@@ -87,17 +109,16 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
 
   const canSend = wallet.type !== "watch" && hasEncryptedKey(wallet.id);
 
-  // Track whether first load has completed — avoids stale closure issues in interval
-  const everLoaded = useRef(false);
+  // Prevent stale-closure double-fetch on fast wallet switches
+  const fetchingRef = useRef(false);
 
-  // ── Unified wallet data loader with retry ─────────────────────────────────
-  // Sequential: account info first (TRX + USDT balances), then transactions.
-  // Retries up to 3 times with exponential delay before surfacing an error.
+  // ── Background live fetch — always runs silently ───────────────────────────
+  // Shows only the subtle refresh dot. Retries up to 3× with fallback nodes.
+  // On success: updates state + writes to cache. On full failure: sets loadError.
   const loadWalletData = useCallback(async (opts: { silent?: boolean } = {}) => {
-    if (!opts.silent) {
-      if (!everLoaded.current) setLoading(true);  // first open → full-screen spinner
-      else setRefreshing(true);                    // subsequent → subtle banner
-    }
+    if (fetchingRef.current) return;          // don't double-fetch
+    fetchingRef.current = true;
+    setRefreshing(true);
     setLoadError(false);
 
     const MAX_ATTEMPTS = 3;
@@ -105,37 +126,52 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
 
     while (attempt < MAX_ATTEMPTS) {
       try {
-        // Step 1 — TRX balance + USDT via balanceOf (parallel internally)
-        const accountData = await fetchAccountInfo(wallet.address);
+        const [accountData, txData] = await Promise.all([
+          fetchAccountInfo(wallet.address),
+          fetchAllTransactions(wallet.address),
+        ]);
+        // Persist to cache before updating state
+        writeCache(wallet.address, accountData, txData);
         setInfo(accountData);
-
-        // Step 2 — Transaction history (TRX + USDT, deduplicated internally)
-        const txData = await fetchAllTransactions(wallet.address);
         setTxs(txData);
-
-        everLoaded.current = true;
+        setLastUpdated(Date.now());
         setLoading(false);
         setRefreshing(false);
         setLoadError(false);
-        return; // success — exit loop
+        fetchingRef.current = false;
+        return;
       } catch {
         attempt++;
         if (attempt < MAX_ATTEMPTS) {
-          await new Promise(r => setTimeout(r, 1000 * attempt)); // 1s, 2s back-off
+          await new Promise(r => setTimeout(r, 1000 * attempt));
         } else {
           setLoading(false);
           setRefreshing(false);
           setLoadError(true);
-          if (!opts.silent) toast.error("No se pudo conectar con la blockchain. Verifica tu conexión.");
+          fetchingRef.current = false;
         }
       }
     }
   }, [wallet.address]);
 
-  // ── On open: initial load + relay status ──────────────────────────────────
+  // ── On open: show cache immediately, then fetch live in background ─────────
   useEffect(() => {
-    everLoaded.current = false; // reset on wallet change
-    loadWalletData();
+    fetchingRef.current = false; // reset guard on wallet change
+
+    const cached = readCache(wallet.address);
+    if (cached) {
+      // Show cached data instantly — no loading spinner needed
+      setInfo(cached.info);
+      setTxs(cached.txs);
+      setLastUpdated(cached.ts);
+      setLoading(false);
+    } else {
+      // No cache — show spinner until first live data arrives
+      setLoading(true);
+    }
+
+    // Always fetch live data in the background regardless
+    loadWalletData({ silent: true });
     fetchRelayStatus().then(s => setRelayActive(s.relayerActive)).catch(() => {});
   }, [wallet.address, loadWalletData]);
 
@@ -309,18 +345,7 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
         {view === "overview" && (
           <div className="px-4 pb-6">
 
-            {/* Blockchain update banner — shown during background refresh */}
-            {refreshing && (
-              <div className="flex items-center gap-2 rounded-2xl px-3 py-2 mb-3 -mt-1"
-                style={{ background: `${BLUE}12`, border: `1px solid ${BLUE}25` }}>
-                <Loader2 className="h-3 w-3 animate-spin shrink-0" style={{ color: BLUE }} />
-                <p className="text-[10px] font-medium" style={{ color: "rgba(255,255,255,0.45)" }}>
-                  Actualizando información de la blockchain…
-                </p>
-              </div>
-            )}
-
-            {/* Connection banner — shown while retrying after all nodes failed */}
+            {/* Connection banner — shown only when all fallback nodes failed */}
             {loadError && !loading && (
               <div className="flex items-center gap-2.5 rounded-2xl px-3 py-2.5 mb-3"
                 style={{ background: `${BLUE}10`, border: `1px solid ${BLUE}22` }}>
@@ -343,17 +368,43 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
 
             {/* Balance cards */}
             {loading ? (
+              /* First open with no cache — show minimal spinner */
               <div className="flex flex-col items-center justify-center py-12 gap-3">
                 <Loader2 className="h-8 w-8 animate-spin" style={{ color: GREEN }} />
                 <p className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.55)" }}>
-                  Conectando a la red TRON…
-                </p>
-                <p className="text-[10px] text-center" style={{ color: "rgba(255,255,255,0.25)" }}>
-                  Verificando nodo disponible
+                  Cargando billetera…
                 </p>
               </div>
             ) : (
               <>
+                {/* Balance section header: label + live refresh dot */}
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest"
+                    style={{ color: "rgba(255,255,255,0.25)" }}>
+                    Saldo
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    {refreshing && (
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                          style={{ background: GREEN }} />
+                        <span className="relative inline-flex h-2 w-2 rounded-full"
+                          style={{ background: GREEN }} />
+                      </span>
+                    )}
+                    {lastUpdated && !refreshing && (
+                      <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.2)" }}>
+                        {(() => {
+                          const s = Math.floor((Date.now() - lastUpdated) / 1000);
+                          if (s < 60) return "Actualizado ahora";
+                          const m = Math.floor(s / 60);
+                          return `Hace ${m} min`;
+                        })()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 {/* TRX card */}
                 <div className="rounded-2xl p-4 mb-3"
                   style={{ background: `linear-gradient(135deg, #FF2D5520 0%, #FF2D5508 100%)`, border: `1px solid #FF2D5530` }}>
@@ -802,7 +853,7 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
               <div className="flex flex-col items-center gap-3 py-12">
                 <Loader2 className="h-6 w-6 animate-spin" style={{ color: GREEN }} />
                 <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
-                  Actualizando información de la blockchain…
+                  Cargando historial…
                 </p>
               </div>
             ) : txs.length === 0 ? (
