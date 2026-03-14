@@ -21,7 +21,27 @@ interface ReportData {
   uniqueWalletsCount: number;
   transfersAnalyzed: number;
   exchangeInteractions: number;
+  suspiciousInteractions: number;
 }
+
+// Known suspicious / high-risk TRON addresses (mixers, scams, sanctioned entities)
+const SUSPICIOUS_WALLETS = new Set([
+  "TDCLbZMHJJYNVMLMBBf63tKRgRGUhSQMmk",
+  "THFgNEBXCmXnprDRaEf4bArVLphCwN7xNh",
+  "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
+  "TUFMa4D3j3S8rWB4hWMerGJqDcNEpBjNNT",
+  "TNaRAoLUyYEV2uF7GUrzSjRQTU3v6CHdXM",
+  "TXrkRCGqMjRhSfsFGr8bPxr7xHLGJFGJ2V",
+  "TMuA6YqfCeX8EhbfYEg5y7S4DqzSJireY9",
+  "TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7",
+  "TYukBQZ2XXCcRCReAUgCiWScMT6SLFRFAs",
+  "TKVTdDBFUQH7FMnSQYELipCBYPegDhQwRJ",
+  "TUea3MVQCWrYmKpBHe7aWAzSHHQHBGMQqz",
+  "TVj7RNbeogwmasTB3fjnv75eV7teYmn74R",
+  "TAPVF93s8dysXY8MzvqMoRdawoNMAPf7tL",
+  "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwH",
+  "TXmVpin9hDD7YJAuaECRiEJVXPDnuGSo9f",
+]);
 
 // Decode a base58-encoded TRON address into a 64-char ABI-encoded hex parameter
 const tronBase58ToAbiParam = (address: string): string => {
@@ -171,6 +191,7 @@ const WalletAnalyzer = () => {
     const uniqueWallets = new Set<string>();
     let transfers: any[] = [];
     let exchangeInteractions = 0;
+    let suspiciousInteractions = 0;
 
     let fingerprint: string | null = null;
     const maxPages = 3;
@@ -198,6 +219,12 @@ const WalletAnalyzer = () => {
       }
       if (t.from) uniqueWallets.add(t.from);
       if (t.to) uniqueWallets.add(t.to);
+
+      // Counterparty risk: the other party in each transfer
+      const counterparty = t.to === addr ? t.from : t.to;
+      if (counterparty && counterparty !== addr && SUSPICIOUS_WALLETS.has(counterparty)) {
+        suspiciousInteractions++;
+      }
     });
 
     return {
@@ -215,6 +242,7 @@ const WalletAnalyzer = () => {
       uniqueWalletsCount: uniqueWallets.size,
       transfersAnalyzed: transfers.length,
       exchangeInteractions,
+      suspiciousInteractions,
     };
   };
 

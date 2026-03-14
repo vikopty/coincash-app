@@ -19,6 +19,7 @@ interface ReportData {
   uniqueWalletsCount: number;
   transfersAnalyzed: number;
   exchangeInteractions: number;
+  suspiciousInteractions: number;
 }
 
 const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
@@ -37,6 +38,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
     uniqueWalletsCount = 0,
     transfersAnalyzed = 0,
     exchangeInteractions = 0,
+    suspiciousInteractions = 0,
   } = reportData || {};
 
   const creationDate = dateCreated ? new Date(dateCreated) : new Date();
@@ -62,6 +64,11 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
   if (transfersAnalyzed > 0 && exchangeInteractions > transfersAnalyzed * 0.5) {
     riskScore -= 10;
   }
+
+  // Counterparty risk: interactions with suspicious wallets
+  if (suspiciousInteractions >= 5) riskScore += 40;
+  else if (suspiciousInteractions >= 2) riskScore += 25;
+  else if (suspiciousInteractions >= 1) riskScore += 15;
 
   riskScore = Math.max(0, Math.min(100, riskScore));
 
@@ -347,6 +354,21 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                     </Badge>
                   </TableCell>
                 </TableRow>
+                <TableRow>
+                  <TableCell>Interacciones Infectadas</TableCell>
+                  <TableCell>{suspiciousInteractions} de {transfersAnalyzed}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={suspiciousInteractions >= 5 ? "destructive" : suspiciousInteractions >= 1 ? "outline" : "default"}
+                    >
+                      {suspiciousInteractions >= 5
+                        ? "Nivel de Riesgo: Alto"
+                        : suspiciousInteractions >= 1
+                        ? "Nivel de Riesgo: Moderado"
+                        : "Nivel de Riesgo: Ninguno"}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
               </TableBody>
             </Table>
           </div>
@@ -372,15 +394,27 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isFrozen ? (
+                {isFrozen && (
                   <TableRow>
-                    <TableCell className="font-medium text-red-500">USDT Blacklist</TableCell>
+                    <TableCell className="font-medium text-red-500">USDT Blacklist / Congelada</TableCell>
                     <TableCell>{formattedLastTxDate}</TableCell>
                     <TableCell>
                       <Badge variant="destructive">Congelada</Badge>
                     </TableCell>
                   </TableRow>
-                ) : (
+                )}
+                {suspiciousInteractions > 0 && (
+                  <TableRow>
+                    <TableCell className="font-medium text-orange-500">Contrapartes Sospechosas</TableCell>
+                    <TableCell>{suspiciousInteractions} interacciones detectadas</TableCell>
+                    <TableCell>
+                      <Badge variant={suspiciousInteractions >= 5 ? "destructive" : "outline"}>
+                        {suspiciousInteractions >= 5 ? "Alto Riesgo" : "Riesgo Moderado"}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!isFrozen && suspiciousInteractions === 0 && (
                   <TableRow>
                     <TableCell colSpan={3} className="text-center text-muted-foreground py-4">
                       No se encontraron sanciones ni congelamientos para esta dirección.
