@@ -11,7 +11,8 @@ import { es } from "date-fns/locale";
 import {
   fetchAccountInfo, fetchAllTransactions,
   sendTRX, sendUSDT, relayUSDTTransfer, fetchRelayStatus,
-  type AccountInfo, type TxRecord, type RelayResult,
+  estimateUSDTTransferFee,
+  type AccountInfo, type TxRecord, type RelayResult, type FeeEstimate,
 } from "@/lib/tronApi";
 import { decryptPrivateKey, hasEncryptedKey } from "@/lib/security";
 import type { SavedWallet } from "@/pages/WalletsPage";
@@ -76,9 +77,13 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
   const [sendTo, setSendTo]       = useState("");
   const [sendAmt, setSendAmt]     = useState("");
   const [sendLoading, setSendLoading] = useState(false);
-  const [sentTxId, setSentTxId]   = useState("");
+  const [sentTxId, setSentTxId]         = useState("");
   const [sentSponsored, setSentSponsored] = useState(false);
-  const [relayActive, setRelayActive] = useState(false);
+  const [relayActive, setRelayActive]   = useState(false);
+
+  // Fee abstraction state (USDT transfers only)
+  const [feeEstimate, setFeeEstimate]   = useState<FeeEstimate | null>(null);
+  const [feeLoading, setFeeLoading]     = useState(false);
 
   const canSend = wallet.type !== "watch" && hasEncryptedKey(wallet.id);
 
@@ -140,6 +145,17 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
     return () => clearInterval(id);
   }, [loadWalletData]);
 
+  // ── Load fee estimate when USDT is selected or send view opens ────────────
+  useEffect(() => {
+    if (view !== "send" || sendToken !== "USDT") { setFeeEstimate(null); return; }
+    let cancelled = false;
+    setFeeLoading(true);
+    estimateUSDTTransferFee()
+      .then(f => { if (!cancelled) { setFeeEstimate(f); setFeeLoading(false); } })
+      .catch(() => { if (!cancelled) setFeeLoading(false); });
+    return () => { cancelled = true; };
+  }, [view, sendToken]);
+
   // ── QR code ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (view !== "receive") return;
@@ -156,6 +172,13 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
   };
 
   // ── Send flow ──────────────────────────────────────────────────────────────
+  // Net amount recipient receives after fee deduction (USDT only)
+  const netAmount = (() => {
+    if (sendToken !== "USDT" || !feeEstimate) return null;
+    const amt = parseFloat(sendAmt) || 0;
+    return Math.max(0, parseFloat((amt - feeEstimate.feeUSDT).toFixed(6)));
+  })();
+
   const validateSend = () => {
     if (!sendTo.startsWith("T") || sendTo.length < 30) {
       toast.error("Dirección TRON inválida."); return false;
@@ -163,7 +186,12 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
     const amt = parseFloat(sendAmt);
     if (!amt || amt <= 0) { toast.error("Monto inválido."); return false; }
     const bal = sendToken === "TRX" ? (info?.trxBalance ?? 0) : (info?.usdtBalance ?? 0);
-    if (amt > bal) { toast.error(`Saldo insuficiente.`); return false; }
+    if (amt > bal) { toast.error("Saldo insuficiente."); return false; }
+    // For USDT, ensure net amount after fee is positive
+    if (sendToken === "USDT" && feeEstimate && amt <= feeEstimate.feeUSDT) {
+      toast.error(`El monto debe ser mayor a la tarifa de red (${feeEstimate.feeUSDT.toFixed(2)} USDT).`);
+      return false;
+    }
     return true;
   };
 
@@ -178,8 +206,12 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
         setSentTxId(txId);
         setSentSponsored(false);
       } else {
-        // USDT: use gasless relay — signs locally, relay handles energy delegation + broadcast
-        const result: RelayResult = await relayUSDTTransfer(wallet.address, sendTo, amt, privKey);
+        // USDT gas abstraction:
+        // – Deduct the network fee from the transfer amount (recipient gets less)
+        // – Relay broadcasts the tx and pays TRX energy from its staked balance
+        const fee = feeEstimate?.feeUSDT ?? 0;
+        const netAmt = parseFloat(Math.max(0.000001, amt - fee).toFixed(6));
+        const result: RelayResult = await relayUSDTTransfer(wallet.address, sendTo, netAmt, privKey);
         setSentTxId(result.txId);
         setSentSponsored(result.sponsored);
       }
@@ -478,19 +510,33 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                   </p>
                 </div>
 
-                {/* Sponsored badge — only shown when relay covered the energy */}
-                {sentSponsored && (
+                {/* USDT fee summary — shown after a successful USDT send */}
+                {sendToken === "USDT" && feeEstimate && (
+                  <div className="w-full rounded-2xl overflow-hidden"
+                    style={{ border: `1px solid ${BORDER}` }}>
+                    {[
+                      ["Monto total", `${sendAmt} USDT`, "white"],
+                      ["Tarifa de red", `${feeEstimate.feeUSDT.toFixed(2)} USDT`, AMBER],
+                      ["Destinatario recibió", `${(netAmount ?? 0).toFixed(2)} USDT`, GREEN],
+                    ].map(([label, value, color], i, arr) => (
+                      <div key={label} className="flex items-center justify-between px-4 py-2.5"
+                        style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none",
+                          background: i === arr.length - 1 ? `${GREEN}06` : "transparent" }}>
+                        <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</span>
+                        <span className="text-[10px] font-bold" style={{ color }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* TRX energy sponsorship badge */}
+                {sentSponsored && sendToken !== "USDT" && (
                   <div className="w-full rounded-2xl px-4 py-3 flex items-center gap-3"
                     style={{ background: `${GREEN}0A`, border: `1px solid ${GREEN}25` }}>
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-                      style={{ background: `${GREEN}20` }}>
-                      <ShieldAlert className="h-3.5 w-3.5" style={{ color: GREEN }} />
-                    </div>
+                    <ShieldAlert className="h-3.5 w-3.5 shrink-0" style={{ color: GREEN }} />
                     <div className="text-left">
                       <p className="text-[11px] font-bold" style={{ color: GREEN }}>Gas Fee: 0 TRX</p>
-                      <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>
-                        Patrocinado por CoinCash
-                      </p>
+                      <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>Patrocinado por CoinCash</p>
                     </div>
                   </div>
                 )}
@@ -532,17 +578,34 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                 <p className="text-base font-bold text-white mb-4">Confirmar envío</p>
                 <div className="rounded-2xl overflow-hidden mb-5"
                   style={{ border: `1px solid ${BORDER}`, background: CARD }}>
-                  {[
-                    ["Token", sendToken],
-                    ["Monto", `${sendAmt} ${sendToken}`],
-                    ["Desde", short(wallet.address)],
-                    ["Hacia", short(sendTo)],
-                    ["Gas / Fee", sendToken === "TRX" ? "~1 TRX (bandwidth)" : "0 TRX — Patrocinado por CoinCash"],
-                  ].map(([label, value], i, arr) => (
+                  {(sendToken === "TRX"
+                    ? [
+                        ["Token", "TRX"],
+                        ["Monto", `${sendAmt} TRX`],
+                        ["Desde", short(wallet.address)],
+                        ["Hacia", short(sendTo)],
+                        ["Tarifa de red", "~1 TRX (bandwidth)"],
+                      ]
+                    : [
+                        ["Token", "USDT TRC20"],
+                        ["Monto total", `${sendAmt} USDT`],
+                        ["Tarifa de red", feeEstimate ? `${feeEstimate.feeUSDT.toFixed(2)} USDT ≈ ${feeEstimate.feeTRX.toFixed(1)} TRX` : "—"],
+                        ["Destinatario recibe", netAmount !== null ? `${netAmount.toFixed(2)} USDT` : "—"],
+                        ["Hacia", short(sendTo)],
+                      ]
+                  ).map(([label, value], i, arr) => (
                     <div key={label} className="flex items-start justify-between px-4 py-3"
                       style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
                       <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</span>
-                      <span className="text-xs font-semibold text-white text-right max-w-[60%] break-all">{value}</span>
+                      <span className={`text-xs font-semibold text-right max-w-[55%] break-all ${
+                        label === "Tarifa de red" ? "" : label === "Destinatario recibe" ? "" : ""
+                      }`} style={{
+                        color: label === "Tarifa de red" && sendToken === "USDT"
+                          ? AMBER
+                          : label === "Destinatario recibe"
+                          ? GREEN
+                          : "white"
+                      }}>{value}</span>
                     </div>
                   ))}
                 </div>
@@ -637,19 +700,43 @@ export default function WalletDetailSheet({ wallet, onClose }: Props) {
                 />
 
                 {sendToken === "USDT" && (
-                  <div className="rounded-2xl p-3 mb-4 flex items-center gap-3"
-                    style={{ background: `${GREEN}0A`, border: `1px solid ${GREEN}25` }}>
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-                      style={{ background: `${GREEN}20` }}>
-                      <CheckCheck className="h-3.5 w-3.5" style={{ color: GREEN }} />
+                  <div className="rounded-2xl overflow-hidden mb-4"
+                    style={{ border: `1px solid ${BORDER}`, background: CARD }}>
+                    {/* Fee row */}
+                    <div className="flex items-center justify-between px-4 py-3"
+                      style={{ borderBottom: `1px solid ${BORDER}` }}>
+                      <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
+                        Tarifa de red
+                      </span>
+                      {feeLoading ? (
+                        <Loader2 className="h-3 w-3 animate-spin" style={{ color: "rgba(255,255,255,0.3)" }} />
+                      ) : feeEstimate ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-bold" style={{ color: AMBER }}>
+                            {feeEstimate.feeUSDT.toFixed(2)} USDT
+                          </span>
+                          <span className="text-[9px] font-mono" style={{ color: "rgba(255,255,255,0.25)" }}>
+                            ≈ {feeEstimate.feeTRX.toFixed(1)} TRX
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.25)" }}>—</span>
+                      )}
                     </div>
-                    <div>
-                      <p className="text-[11px] font-bold mb-0.5" style={{ color: GREEN }}>
-                        Gas Fee: 0 TRX
-                      </p>
-                      <p className="text-[10px] leading-relaxed" style={{ color: "rgba(255,255,255,0.45)" }}>
-                        Patrocinado por CoinCash — sin costes de energía para ti.
-                      </p>
+                    {/* Recipient row */}
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
+                        Destinatario recibe
+                      </span>
+                      {feeLoading || !feeEstimate ? (
+                        <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.25)" }}>—</span>
+                      ) : (
+                        <span className="text-[11px] font-bold" style={{ color: GREEN }}>
+                          {netAmount !== null && netAmount > 0
+                            ? `${netAmount.toFixed(2)} USDT`
+                            : "—"}
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}

@@ -290,6 +290,76 @@ async function broadcastSigned(tx: any, privKeyHex: string): Promise<string> {
   return tx.txID;
 }
 
+// ── Gas abstraction — fee estimation ─────────────────────────────────────────
+// Estimates the USDT equivalent of the TRX energy cost for a USDT TRC20 transfer.
+// The fee is deducted from the transfer amount so the user never needs TRX.
+
+export interface FeeEstimate {
+  feeTRX: number;       // TRX cost of the transfer (energy × price)
+  feeUSDT: number;      // USDT equivalent, deducted from sent amount
+  trxPriceUSDT: number; // current TRX/USDT price used for conversion
+  energyUsed: number;   // energy estimate used in calculation
+}
+
+// Energy estimate — conservative value covering cold+warm USDT contract calls
+const ENERGY_ESTIMATE = 65_000; // energy units
+
+// In-memory cache for live prices (30-second TTL)
+let _priceCache: { trxUsdt: number; energySun: number; ts: number } | null = null;
+const PRICE_TTL = 30_000;
+
+async function fetchLivePrices(): Promise<{ trxUsdt: number; energySun: number }> {
+  const now = Date.now();
+  if (_priceCache && now - _priceCache.ts < PRICE_TTL) {
+    return { trxUsdt: _priceCache.trxUsdt, energySun: _priceCache.energySun };
+  }
+
+  // Fetch TRX/USDT price from CoinGecko (public, no auth required)
+  const [priceRes, chainRes] = await Promise.all([
+    fetch("https://api.coingecko.com/api/v3/simple/price?ids=tron&vs_currencies=usd", {
+      headers: { Accept: "application/json" },
+    }).catch(() => null),
+    (async () => {
+      await rateWait();
+      return fetch(`${BASE}/wallet/getchainparameters`, {
+        headers: apiHeaders(),
+      }).catch(() => null);
+    })(),
+  ]);
+
+  let trxUsdt = 0.12; // fallback: $0.12 per TRX
+  if (priceRes?.ok) {
+    const j = await priceRes.json().catch(() => null);
+    if (j?.tron?.usd) trxUsdt = j.tron.usd;
+  }
+
+  let energySun = 420; // fallback: 420 SUN per energy (TRON mainnet default)
+  if (chainRes?.ok) {
+    const j = await chainRes.json().catch(() => null);
+    const param = (j?.chainParameter ?? []).find((p: any) => p.key === "getEnergyFee");
+    if (param?.value) energySun = param.value;
+  }
+
+  _priceCache = { trxUsdt, energySun, ts: now };
+  return { trxUsdt, energySun };
+}
+
+// Estimate the USDT network fee for a TRC20 USDT transfer.
+// Returns the fee in USDT that will be deducted from the transfer amount.
+export async function estimateUSDTTransferFee(): Promise<FeeEstimate> {
+  const { trxUsdt, energySun } = await fetchLivePrices();
+
+  const feeTRX  = (ENERGY_ESTIMATE * energySun) / 1_000_000;   // energy → SUN → TRX
+  const feeUSDT = parseFloat((feeTRX * trxUsdt).toFixed(2));   // TRX → USDT, 2 decimals
+
+  return {
+    feeTRX,
+    feeUSDT: Math.max(0.01, feeUSDT), // floor at 1 cent
+    trxPriceUSDT: trxUsdt,
+    energyUsed: ENERGY_ESTIMATE,
+  };
+}
+
 // ── Send TRX ─────────────────────────────────────────────────────────────────
 export async function sendTRX(
   from: string, to: string, amountTrx: number, privKeyHex: string
