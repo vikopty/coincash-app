@@ -10,10 +10,27 @@ import { sign as secp256k1Sign } from "@noble/secp256k1";
 const TRON_GRID       = "https://api.trongrid.io";
 const API_KEY         = process.env.VITE_TRON_API_KEY          ?? "";
 const RELAY_KEY       = process.env.TRON_RELAYER_PRIVATE_KEY   ?? "";
-const RELAY_ADDR      = process.env.TRON_RELAYER_ADDRESS       ?? ""; // 41-hex
+const _RELAY_ADDR_RAW = process.env.TRON_RELAYER_ADDRESS       ?? "";
 const TREASURY_ADDR   = process.env.TREASURY_ADDRESS           ?? ""; // B58
 
 const USDT_CONTRACT_B58 = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+
+// ── Normalize relayer address to 42-char hex (TronGrid always wants hex) ─────
+// The env var may be set as B58 ("TLi92d...") or already as hex ("41abc...").
+// Mixing B58 and hex in the same API call → "string did not match expected pattern".
+function normalizeToHex(raw: string): string {
+  if (!raw) return "";
+  if (raw.startsWith("41") && raw.length === 42 && /^[0-9a-fA-F]+$/.test(raw)) return raw.toLowerCase();
+  try { return tronB58ToHex(raw); } catch { return raw; }
+}
+const RELAY_ADDR = normalizeToHex(_RELAY_ADDR_RAW); // always 42-char hex
+
+// ── Safe SUN conversion — guarantees a true integer (no floats to TronGrid) ──
+function toSun(amount: number): number {
+  const raw = typeof amount === "string" ? parseFloat((amount as string).replace(/,/g, ".")) : amount;
+  if (!isFinite(raw) || raw <= 0) throw new Error(`Monto inválido: ${amount}`);
+  return Math.trunc(Math.round(raw * 1_000_000));
+}
 
 export const SWAP_FEE_RATE      = 0.02;   // 2 % CoinCash swap fee (of output)
 export const QUOTE_TTL_MS       = 60_000; // quotes expire after 60 s
@@ -213,11 +230,12 @@ export async function createSwapQuote(
 // ── Send TRX from relayer ─────────────────────────────────────────────────────
 async function sendTRXFromRelayer(toHex: string, amountTRX: number): Promise<string> {
   if (!RELAY_KEY || !RELAY_ADDR) throw new Error("Relayer no configurado.");
-  const amountSun = Math.round(amountTRX * 1_000_000);
+  const amountSun = toSun(amountTRX);                   // ← safe integer, no floats
   await rateWait();
   const res = await fetch(`${TRON_GRID}/wallet/createtransaction`, {
     method: "POST",
     headers: apiHeaders(),
+    // Both addresses must be the same format; RELAY_ADDR is always hex (normalizeToHex above)
     body: JSON.stringify({ owner_address: RELAY_ADDR, to_address: toHex, amount: amountSun }),
   });
   if (!res.ok) throw new Error(`Error creando tx TRX (${res.status})`);
@@ -235,7 +253,7 @@ async function sendUSDTFromRelayer(toHex: string, amountUSDT: number): Promise<s
   const contractHex = tronB58ToHex(USDT_CONTRACT_B58);
   const toHex20     = toHex.slice(2);
   const toParam     = toHex20.padStart(64, "0");
-  const amtRaw      = BigInt(Math.round(amountUSDT * 1_000_000));
+  const amtRaw      = BigInt(toSun(amountUSDT));          // ← safe integer via toSun()
   const amtParam    = amtRaw.toString(16).padStart(64, "0");
   const parameter   = toParam + amtParam;
 
@@ -243,6 +261,7 @@ async function sendUSDTFromRelayer(toHex: string, amountUSDT: number): Promise<s
   const res = await fetch(`${TRON_GRID}/wallet/triggersmartcontract`, {
     method: "POST",
     headers: apiHeaders(),
+    // RELAY_ADDR is normalised to hex at startup — never mix B58/hex in one request
     body: JSON.stringify({
       owner_address:     RELAY_ADDR,
       contract_address:  contractHex,

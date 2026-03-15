@@ -76,6 +76,15 @@ function bytesToHex(b: Uint8Array): string {
   return Array.from(b).map(x => x.toString(16).padStart(2, "0")).join("");
 }
 
+// Safe SUN conversion — always returns a true integer, never a float
+function toSun(amount: number): number {
+  const n = typeof amount === "string"
+    ? parseFloat((amount as string).replace(/,/g, "."))
+    : Number(amount);
+  if (!isFinite(n) || n <= 0) throw new Error(`Monto inválido: ${amount}`);
+  return Math.trunc(Math.round(n * 1_000_000));
+}
+
 // ── Base58 ────────────────────────────────────────────────────────────────────
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -512,9 +521,9 @@ export async function sendTRX(
   if (amountTrx <= 0) throw new Error("El monto debe ser mayor a 0.");
   if (!to.startsWith("T") || to.length < 30) throw new Error("Dirección destino inválida.");
 
-  const fromHex = tronAddrToHex(from);
-  const toHex   = tronAddrToHex(to);
-  const amountSun = Math.round(amountTrx * 1_000_000);
+  const fromHex   = tronAddrToHex(from);
+  const toHex     = tronAddrToHex(to);
+  const amountSun = toSun(amountTrx);   // safe integer
 
   await rateWait();
   const res = await tronFetch("/wallet/createtransaction", {
@@ -539,7 +548,7 @@ export async function sendUSDT(
   const contractHex = tronAddrToHex(USDT_CONTRACT);
   const toHex20    = tronAddrToHex(to).slice(2);
   const toParam    = toHex20.padStart(64, "0");
-  const amtRaw     = BigInt(Math.round(amountUsdt * 1_000_000));
+  const amtRaw     = BigInt(toSun(amountUsdt));  // safe integer
   const amtParam   = amtRaw.toString(16).padStart(64, "0");
   const parameter  = toParam + amtParam;
 
@@ -571,7 +580,7 @@ async function buildAndSignUSDTTx(
   const contractHex = tronAddrToHex(USDT_CONTRACT);
   const toHex20     = tronAddrToHex(to).slice(2);
   const toParam     = toHex20.padStart(64, "0");
-  const amtRaw      = BigInt(Math.round(amountUsdt * 1_000_000));
+  const amtRaw      = BigInt(toSun(amountUsdt));  // safe integer
   const amtParam    = amtRaw.toString(16).padStart(64, "0");
   const parameter   = toParam + amtParam;
 
@@ -646,7 +655,7 @@ async function buildAndSignTRXTx(
 ): Promise<any> {
   const fromHex   = tronAddrToHex(from);
   const toHex     = tronAddrToHex(to);
-  const amountSun = Math.round(amountTrx * 1_000_000);
+  const amountSun = toSun(amountTrx);  // safe integer
 
   await rateWait();
   const res = await tronFetch("/wallet/createtransaction", {
