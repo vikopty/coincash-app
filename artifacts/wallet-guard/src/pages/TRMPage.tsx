@@ -170,7 +170,7 @@ export default function TRMPage({ onClose }: Props) {
     : isUp ? GREEN : DANGER;
 
   return (
-    <div className="flex flex-col" style={{ background: BG, minHeight: "100dvh", paddingBottom: "80px" }}>
+    <div className="flex flex-col" style={{ background: BG, height: "100dvh", paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 60px)" }}>
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-5 pt-10 pb-4 shrink-0">

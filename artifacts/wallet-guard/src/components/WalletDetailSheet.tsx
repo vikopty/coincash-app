@@ -371,7 +371,8 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
   return (
     <div className="flex flex-col"
       style={{
-        background: SHEET, minHeight: "100dvh", paddingBottom: "80px",
+        background: SHEET, height: "100dvh",
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 60px)",
         overflowY: "auto", WebkitOverflowScrolling: "touch" as any,
       }}>
 
