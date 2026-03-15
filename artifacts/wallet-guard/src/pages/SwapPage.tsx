@@ -2,8 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowDownUp, Loader2, ChevronDown, AlertTriangle,
-  CheckCircle2, Copy, CheckCheck, RefreshCw, Zap,
-  ArrowDown,
+  CheckCircle2, Copy, CheckCheck, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -247,41 +246,7 @@ export default function SwapPage({ wallets }: Props) {
   return (
     <div className="min-h-screen pb-28" style={{ background: "#080d14" }}>
 
-      {/* ── STICKY HEADER ─────────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 px-5 pt-12 pb-3"
-        style={{ background: "rgba(8,13,20,0.95)", backdropFilter: "blur(24px)", borderBottom: `1px solid ${BORDER}` }}>
-        <div className="flex items-start justify-between">
-          {/* Title */}
-          <div>
-            <h1 className="text-2xl font-black text-white tracking-tight leading-none">Swap</h1>
-            <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.35)" }}>
-              Convierte USDT ↔ TRX al instante
-            </p>
-          </div>
-          {/* Live TRX price pill */}
-          <button onClick={loadRate} disabled={rateLoading}
-            className="flex items-center gap-1.5 rounded-2xl px-3.5 py-2 transition-all"
-            style={{
-              background: ratePulse ? `${GREEN}18` : "rgba(255,255,255,0.05)",
-              border: `1px solid ${ratePulse ? GREEN + "40" : BORDER}`,
-              transition: "background 0.4s, border 0.4s",
-            }}>
-            {rateLoading
-              ? <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "rgba(255,255,255,0.4)" }} />
-              : <RefreshCw className="h-3 w-3" style={{ color: "rgba(255,255,255,0.3)" }} />
-            }
-            {trxUsd > 0 ? (
-              <span className="text-xs font-bold" style={{ color: GREEN }}>
-                TRX <span className="font-black">${trxUsd.toFixed(4)}</span>
-              </span>
-            ) : (
-              <span className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>TRX …</span>
-            )}
-          </button>
-        </div>
-      </div>
-
-      <div className="px-4 pt-4">
+      <div className="px-4 pt-14">
 
         {/* ════════════════════════════════════════════════════════════════════
             DONE STEP
