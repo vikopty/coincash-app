@@ -206,13 +206,23 @@ export async function fetchAccountInfo(address: string): Promise<AccountInfo> {
     trxBalance = (acc.balance ?? 0) / 1_000_000;
     activated  = true;
 
-    // Also check the account's trc20 array as an additional data source
+    // Also check the account's trc20 array as an additional data source.
+    // TronGrid can return keys in B58, HEX, or with minor case differences —
+    // do a case-insensitive scan of all keys in each entry to avoid silent misses.
     if (Array.isArray(acc.trc20)) {
+      const usdtTargets = new Set([
+        USDT_CONTRACT.toLowerCase(),
+        USDT_CONTRACT2.toLowerCase(),
+        tronAddrToHex(USDT_CONTRACT).toLowerCase(),
+        tronAddrToHex(USDT_CONTRACT2).toLowerCase(),
+      ]);
       for (const entry of acc.trc20) {
-        const v1 = entry[USDT_CONTRACT];
-        const v2 = entry[USDT_CONTRACT2];
-        if (v1 !== undefined) usdtCandidates.push(Number(v1) / 1_000_000);
-        if (v2 !== undefined) usdtCandidates.push(Number(v2) / 1_000_000);
+        for (const [k, v] of Object.entries(entry)) {
+          if (usdtTargets.has(k.toLowerCase()) && v !== undefined) {
+            const num = Number(v) / 1_000_000;
+            if (num > 0) usdtCandidates.push(num);
+          }
+        }
       }
     }
   }

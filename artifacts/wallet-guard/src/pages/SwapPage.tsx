@@ -12,6 +12,20 @@ import {
 import { decryptPrivateKey, hasEncryptedKey } from "@/lib/security";
 import type { SavedWallet } from "@/pages/WalletsPage";
 
+// ── Shared wallet balance cache (same key as WalletDetailSheet) ───────────────
+// Reads the last-known balance from localStorage instantly so Swap never shows
+// 0 while the live fetch is in progress — or if the live fetch silently fails.
+interface WalletCache { info: AccountInfo; txs: unknown[]; ts: number; }
+function swapCacheKey(addr: string) { return `wg_wallet_cache_${addr}`; }
+function readSwapCache(addr: string): AccountInfo | null {
+  try {
+    const raw = localStorage.getItem(swapCacheKey(addr));
+    if (!raw) return null;
+    const parsed: WalletCache = JSON.parse(raw);
+    return parsed?.info ?? null;
+  } catch { return null; }
+}
+
 // ── Theme ──────────────────────────────────────────────────────────────────────
 const PURPLE  = "#7C3AED";
 const PURPLE2 = "#9F67FF";
@@ -163,12 +177,32 @@ export default function SwapPage({ wallets, activeTab }: Props) {
   }, [loadRate]);
 
   // ── Balance loader — callable from anywhere ───────────────────────────────────
+  // Strategy:
+  //   1. Show the localStorage cache instantly (same data WalletDetailSheet writes)
+  //   2. Run a live fetchAccountInfo in the background
+  //   3. Merge: keep the HIGHER USDT / TRX value so a silently-zeroed live call
+  //      never overwrites a valid cached balance.
   const loadBalance = useCallback(async (address: string) => {
+    // Step 1 — populate from cache so the UI never starts at 0
+    const cached = readSwapCache(address);
+    if (cached) setInfo(cached);
+
     setInfoLoading(true);
     try {
-      const i = await fetchAccountInfo(address);
-      setInfo(i);
-    } catch { /* silently ignore — stale balance stays visible */ }
+      const live = await fetchAccountInfo(address);
+      setInfo(prev => {
+        // If the live call returned 0 USDT but we had a valid cached / prior value,
+        // keep the better number. The live USDT balance should only go down if we're
+        // sure it really is 0 (i.e., the live result is fresh and the cache has 0 too).
+        const bestUsdt = (live.usdtBalance > 0 || (prev?.usdtBalance ?? 0) === 0)
+          ? live.usdtBalance
+          : Math.max(live.usdtBalance, prev?.usdtBalance ?? 0);
+        const bestTrx  = live.trxBalance > 0
+          ? live.trxBalance
+          : Math.max(live.trxBalance, prev?.trxBalance ?? 0);
+        return { ...live, usdtBalance: bestUsdt, trxBalance: bestTrx };
+      });
+    } catch { /* silently keep whatever is already shown */ }
     setInfoLoading(false);
   }, []);
 
