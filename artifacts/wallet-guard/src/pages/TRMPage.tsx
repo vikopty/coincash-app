@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Minus, Activity } from "lucide-react";
+import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Minus, Activity, ArrowUp, ArrowDown } from "lucide-react";
 
 // ── Palette ────────────────────────────────────────────────────────────────────
 const BG     = "#0B0F14";
@@ -114,6 +114,8 @@ const REFRESH_SECS = 20;
 
 export default function TRMPage({ onClose }: Props) {
   const [spot, setSpot]           = useState<number | null>(null);
+  const [prevSpot, setPrevSpot]   = useState<number | null>(null);
+  const [flash, setFlash]         = useState(false);
   const [close, setClose]         = useState<number | null>(null);
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -122,6 +124,8 @@ export default function TRMPage({ onClose }: Props) {
   const countdownRef              = useRef<ReturnType<typeof setInterval> | null>(null);
   // Whether the close price for this session has been established
   const closeSetRef               = useRef(false);
+  // Always-current ref to the spot price — accessible inside stale callbacks
+  const spotRef                   = useRef<number | null>(null);
 
   // ── Load close from storage on mount ───────────────────────────────────────
   useEffect(() => {
@@ -132,13 +136,21 @@ export default function TRMPage({ onClose }: Props) {
     }
   }, []);
 
+  // Keep spotRef in sync so load() can read the current price without stale closure
+  useEffect(() => { spotRef.current = spot; }, [spot]);
+
   // ── Fetch live spot price ──────────────────────────────────────────────────
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     setError(null);
     try {
       const price = await fetchSpot();
+      // Capture previous tick value before overwriting
+      setPrevSpot(spotRef.current);
       setSpot(price);
+      // Trigger brief flash animation on every price update
+      setFlash(true);
+      setTimeout(() => setFlash(false), 700);
       // First fetch of this session sets the close if nothing was stored
       if (!closeSetRef.current) {
         setClose(price);
@@ -176,6 +188,16 @@ export default function TRMPage({ onClose }: Props) {
   const changePct = change !== null && close ? (change / close) * 100 : null;
   const isUp      = (changePct ?? 0) > 0.005;
   const isDown    = (changePct ?? 0) < -0.005;
+
+  // Tick-to-tick direction: compares current fetch vs the one before it
+  const tickDir: "up" | "down" | "neutral" =
+    prevSpot === null || spot === null ? "neutral"
+    : spot > prevSpot               ? "up"
+    : spot < prevSpot               ? "down"
+    : "neutral";
+  const tickColor = tickDir === "up" ? GREEN : tickDir === "down" ? DANGER : BLUE;
+
+  // Hero uses tick color; glow uses close-based direction
   const heroColor = loading || spot === null ? GREEN
     : isUp ? GREEN : isDown ? DANGER : BLUE;
   const changeColor = changePct === null ? BLUE
@@ -248,15 +270,31 @@ export default function TRMPage({ onClose }: Props) {
             <p className="text-2xl font-bold mb-4" style={{ color: DANGER }}>—</p>
           ) : (
             <div className="mb-4">
-              <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-extrabold tracking-tight text-white">
+              <div className="flex items-center gap-2 mb-0.5">
+                {/* Tick direction arrow */}
+                {tickDir === "up" && (
+                  <ArrowUp className="h-6 w-6 flex-shrink-0" style={{ color: GREEN }} />
+                )}
+                {tickDir === "down" && (
+                  <ArrowDown className="h-6 w-6 flex-shrink-0" style={{ color: DANGER }} />
+                )}
+                {/* Price — colored by tick direction, with flash glow */}
+                <span
+                  className="text-4xl font-extrabold tracking-tight"
+                  style={{
+                    color: loading || prevSpot === null ? "white" : tickColor,
+                    textShadow: flash && tickDir !== "neutral"
+                      ? `0 0 24px ${tickColor}90`
+                      : "none",
+                    transition: "color 0.4s ease, text-shadow 0.4s ease",
+                  }}>
                   {fmtCOP(spot!)}
                 </span>
                 <span className="text-lg font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>
                   COP
                 </span>
               </div>
-              <p className="text-[11px] mt-1.5" style={{ color: "rgba(255,255,255,0.22)" }}>
+              <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.22)" }}>
                 {(1_000_000 / spot!).toFixed(4)} USD por millón de pesos
               </p>
             </div>
@@ -316,12 +354,14 @@ export default function TRMPage({ onClose }: Props) {
               {
                 label: "Precio actual",
                 value: `$${fmtCOP(spot, 2)}`,
-                color: "rgba(255,255,255,0.9)",
+                color: prevSpot !== null ? tickColor : "rgba(255,255,255,0.9)",
+                arrow: tickDir,
               },
               {
                 label: "Cierre",
                 value: close !== null ? `$${fmtCOP(close, 2)}` : "—",
                 color: "rgba(255,255,255,0.55)",
+                arrow: "neutral" as const,
               },
               {
                 label: "Cambio",
@@ -329,6 +369,7 @@ export default function TRMPage({ onClose }: Props) {
                   ? `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`
                   : "—",
                 color: changeColor,
+                arrow: "neutral" as const,
               },
             ].map(item => (
               <div key={item.label}
@@ -336,9 +377,17 @@ export default function TRMPage({ onClose }: Props) {
                 style={{ background: CARD, border: `1px solid ${BORDER}` }}>
                 <p className="text-[8px] font-bold uppercase tracking-widest"
                   style={{ color: "rgba(255,255,255,0.22)" }}>{item.label}</p>
-                <p className="text-xs font-bold leading-tight" style={{ color: item.color }}>
-                  {item.value}
-                </p>
+                <div className="flex items-center gap-0.5">
+                  {item.arrow === "up" && (
+                    <ArrowUp className="h-2.5 w-2.5 flex-shrink-0" style={{ color: GREEN }} />
+                  )}
+                  {item.arrow === "down" && (
+                    <ArrowDown className="h-2.5 w-2.5 flex-shrink-0" style={{ color: DANGER }} />
+                  )}
+                  <p className="text-xs font-bold leading-tight" style={{ color: item.color }}>
+                    {item.value}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
