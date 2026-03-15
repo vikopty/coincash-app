@@ -115,30 +115,26 @@ export default function SwapPage({ wallets, activeTab }: Props) {
   const selectedWallet = signableWallets.find(w => w.id === selectedId) ?? signableWallets[0];
 
   // ── Derived ──────────────────────────────────────────────────────────────────
-  const COINCASH_FEE_USDT = 1;
   const sendToken    = swapDir === "usdt_to_trx" ? "USDT" : "TRX";
   const receiveToken = swapDir === "usdt_to_trx" ? "TRX"  : "USDT";
   const trxUsd       = rate?.trxUsd ?? 0;
   const inputAmt     = parseFloat(normAmt(amount)) || 0;
 
-  const swapAmt = swapDir === "usdt_to_trx"
-    ? Math.max(0, inputAmt - COINCASH_FEE_USDT)
-    : inputAmt;
+  // No CoinCash fee — FF swap uses full inputAmt
+  const swapAmt = inputAmt;
 
   const grossOut = swapDir === "usdt_to_trx"
     ? (trxUsd > 0 ? swapAmt / trxUsd : 0)
     : swapAmt * trxUsd;
 
-  const netOut = swapDir === "usdt_to_trx"
-    ? grossOut * 0.98
-    : Math.max(0, grossOut * 0.98 - COINCASH_FEE_USDT);
+  // ~2% FF spread estimate
+  const netOut = grossOut * 0.98;
 
-  const hasAmt       = inputAmt > 0 && trxUsd > 0;
-  const enoughForFee = swapDir === "usdt_to_trx" ? inputAmt > COINCASH_FEE_USDT : true;
-  const sendBalance  = sendToken === "USDT" ? (info?.usdtBalance ?? 0) : (info?.trxBalance ?? 0);
-  const maxSend      = sendToken === "TRX"
+  const hasAmt      = inputAmt > 0 && trxUsd > 0;
+  const sendBalance = sendToken === "USDT" ? (info?.usdtBalance ?? 0) : (info?.trxBalance ?? 0);
+  const maxSend     = sendToken === "TRX"
     ? Math.max(0, sendBalance - 2)
-    : Math.max(0, sendBalance - COINCASH_FEE_USDT);
+    : Math.max(0, sendBalance);
 
   // Single reference price — always expressed as "1 USDT ≈ X TRX" for clarity.
   // Derived from the same trxUsd source used for all swap calculations.
@@ -801,16 +797,18 @@ export default function SwapPage({ wallets, activeTab }: Props) {
               <div className="rounded-t-3xl rounded-b-none px-4 pt-4 pb-3"
                 style={{ background: CARD2, border: `1px solid ${BORDER}`, borderBottom: "none" }}>
 
-                {/* Row 1: label + balance */}
+                {/* Row 1: label + balance (wallet mode only) */}
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[11px] font-semibold uppercase tracking-widest"
                     style={{ color: "rgba(255,255,255,0.35)" }}>Enviar</span>
-                  <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
-                    Disponible:&nbsp;
-                    <span className="font-semibold" style={{ color: "rgba(255,255,255,0.55)" }}>
-                      {fmtAmt(sendBalance, sendToken === "USDT" ? 2 : 4)} {sendToken}
+                  {swapMode === "wallet" && (
+                    <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+                      Disponible:&nbsp;
+                      <span className="font-semibold" style={{ color: "rgba(255,255,255,0.55)" }}>
+                        {fmtAmt(sendBalance, sendToken === "USDT" ? 2 : 4)} {sendToken}
+                      </span>
                     </span>
-                  </span>
+                  )}
                 </div>
 
                 {/* Row 2: big amount input + token badge */}
@@ -830,17 +828,19 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                   </div>
                 </div>
 
-                {/* Row 3: rate label + MAX button */}
+                {/* Row 3: rate label + MAX button (wallet mode only) */}
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
                     {marketRateLabel}
                   </span>
-                  <button
-                    onClick={() => setAmount(maxSend > 0 ? maxSend.toFixed(sendToken === "USDT" ? 2 : 6) : "0")}
-                    className="text-[10px] font-black px-2.5 py-1 rounded-lg tracking-wider"
-                    style={{ background: `${PURPLE}20`, color: PURPLE, border: `1px solid ${PURPLE}40` }}>
-                    MAX
-                  </button>
+                  {swapMode === "wallet" && (
+                    <button
+                      onClick={() => setAmount(maxSend > 0 ? maxSend.toFixed(sendToken === "USDT" ? 2 : 6) : "0")}
+                      className="text-[10px] font-black px-2.5 py-1 rounded-lg tracking-wider"
+                      style={{ background: `${PURPLE}20`, color: PURPLE, border: `1px solid ${PURPLE}40` }}>
+                      MAX
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -869,7 +869,7 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                 <div className="flex items-center justify-between mb-2 mt-1">
                   <span className="text-[11px] font-semibold uppercase tracking-widest"
                     style={{ color: "rgba(255,255,255,0.35)" }}>Recibir</span>
-                  {hasAmt && enoughForFee && (
+                  {hasAmt && (
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
                       style={{ background: `${GREEN}15`, color: GREEN, border: `1px solid ${GREEN}30` }}>
                       estimado
@@ -882,11 +882,11 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                   <div className="flex-1 min-w-0">
                     <p className="text-3xl font-black truncate"
                       style={{
-                        color: hasAmt && enoughForFee ? GREEN : "rgba(255,255,255,0.18)",
+                        color: hasAmt ? GREEN : "rgba(255,255,255,0.18)",
                         letterSpacing: "-0.02em",
                         transition: "color 0.3s",
                       }}>
-                      {hasAmt && enoughForFee
+                      {hasAmt
                         ? `≈ ${netOut.toFixed(receiveToken === "USDT" ? 2 : 4)}`
                         : "0.00"
                       }
@@ -898,13 +898,6 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                     <span className="text-sm font-bold text-white">{receiveToken}</span>
                   </div>
                 </div>
-
-                {/* Row 3: insufficient fee warning */}
-                {hasAmt && !enoughForFee && (
-                  <p className="text-[10px] mt-1.5" style={{ color: AMBER }}>
-                    Monto mínimo: {(COINCASH_FEE_USDT + 0.01).toFixed(2)} USDT
-                  </p>
-                )}
               </div>
             </div>
 
@@ -917,7 +910,7 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                 style={{ borderBottom: `1px solid ${BORDER}` }}>
                 <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Monto enviado</span>
                 <span className="text-xs font-semibold text-white">
-                  {hasAmt && enoughForFee
+                  {hasAmt
                     ? `${inputAmt.toFixed(sendToken === "USDT" ? 2 : 4)} ${sendToken}`
                     : `— ${sendToken}`}
                 </span>
@@ -927,8 +920,8 @@ export default function SwapPage({ wallets, activeTab }: Props) {
               <div className="flex items-center justify-between px-4 py-3"
                 style={{ borderBottom: `1px solid ${BORDER}` }}>
                 <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Recibirás ≈</span>
-                <span className="text-xs font-black" style={{ color: hasAmt && enoughForFee ? GREEN : "rgba(255,255,255,0.15)", fontSize: 13 }}>
-                  {hasAmt && enoughForFee
+                <span className="text-xs font-black" style={{ color: hasAmt ? GREEN : "rgba(255,255,255,0.15)", fontSize: 13 }}>
+                  {hasAmt
                     ? `${netOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`
                     : `— ${receiveToken}`}
                 </span>
@@ -961,7 +954,7 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                   {[
                     {
                       label: "Monto convertido",
-                      value: hasAmt && enoughForFee
+                      value: hasAmt
                         ? swapDir === "usdt_to_trx"
                           ? `${swapAmt.toFixed(2)} USDT`
                           : `${inputAmt.toFixed(4)} TRX`
