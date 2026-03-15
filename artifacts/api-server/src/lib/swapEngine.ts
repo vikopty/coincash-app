@@ -585,9 +585,6 @@ export async function createExternalSwapOrder(
   inputAmount:        number,
   destinationAddress: string,
 ): Promise<ExternalSwapOrder> {
-  if (!isFFConfigured())
-    throw new Error("El servicio de intercambio no está disponible en este momento.");
-
   // Validate destination address — must be a TRON B58 address
   const dest = (destinationAddress ?? "").trim();
   if (!dest || !dest.startsWith("T") || dest.length < 30 || dest.length > 36)

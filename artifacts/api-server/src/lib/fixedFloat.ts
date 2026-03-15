@@ -1,11 +1,13 @@
 // @ts-nocheck
-// FixedFloat API v2 client
-// Auth: X-API-KEY header + X-API-SIGN header (HMAC-SHA256 of body/query-string with secret)
+// FixedFloat API client
+// v2 (authenticated): X-API-KEY + X-API-SIGN (HMAC-SHA256) — used when credentials are set
+// v1 (public):        No auth — used as fallback when credentials are unavailable
 // Docs: https://fixedfloat.com/api
 
 import { createHmac } from "node:crypto";
 
 const FF_BASE       = "https://ff.io/api/v2";
+const FF_BASE_V1    = "https://api.fixedfloat.com/v1";
 const FF_API_KEY    = process.env.FIXEDFLOAT_API_KEY    ?? "";
 const FF_API_SECRET = process.env.FIXEDFLOAT_API_SECRET ?? "";
 
@@ -157,40 +159,12 @@ export async function ffGetOrder(id: string, token: string): Promise<FFOrderStat
   };
 }
 
-export async function ffCreateOrder(
-  from:    string,
-  to:      string,
-  amount:  string,
-  address: string,
-  type:    "float" | "fixed" = "float",
-): Promise<FFOrderResult> {
-  if (!isFFConfigured()) throw new Error("FixedFloat no configurado.");
-
-  // Validate required fields before calling the API
-  if (!address || typeof address !== "string" || address.trim().length === 0)
-    throw new Error("Se requiere la dirección de destino (address) para crear la orden de swap.");
-  if (!from || !to)
-    throw new Error("Se requieren los símbolos de moneda de origen y destino.");
-  const numAmount = parseFloat(amount);
-  if (!amount || isNaN(numAmount) || numAmount <= 0)
-    throw new Error(`Monto inválido para la orden de swap: "${amount}". Debe ser un número mayor a cero.`);
-
-  const body = JSON.stringify({ from, to, amount, address, type });
-  const res  = await fetch(`${FF_BASE}/create`, {
-    method:  "POST",
-    headers: ffHeaders(body),
-    body,
-    signal:  AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`FixedFloat /create HTTP ${res.status}`);
-
-  const json = await res.json() as any;
+/** Parse a FF order response (works for both v1 and v2 shapes). */
+function parseOrderResponse(json: any, from: string, to: string, amount: string): FFOrderResult {
   if (String(json?.code) !== "0") ffError(json, "create");
-
-  const d    = json.data ?? {};
+  const d     = json.data ?? {};
   const from_ = d.from ?? {};
   const to_   = d.to   ?? {};
-
   return {
     id:             String(d.id            ?? ""),
     token:          String(d.token         ?? ""),
@@ -203,4 +177,67 @@ export async function ffCreateOrder(
     toCurrency:     String(to_.currency    ?? to),
     raw:            json.data,
   };
+}
+
+/** v1 public API — no authentication required. */
+async function ffCreateOrderPublic(
+  from:    string,
+  to:      string,
+  amount:  string,
+  address: string,
+  type:    "float" | "fixed" = "float",
+): Promise<FFOrderResult> {
+  const body = JSON.stringify({
+    currency_from: from,
+    currency_to:   to,
+    amount,
+    address,
+    type,
+  });
+  console.log("[ff:v1:public] Creating order", { from, to, amount, address });
+  const res = await fetch(`${FF_BASE_V1}/create`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    signal:  AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`FixedFloat v1 /create HTTP ${res.status}`);
+  const json = await res.json() as any;
+  return parseOrderResponse(json, from, to, amount);
+}
+
+export async function ffCreateOrder(
+  from:    string,
+  to:      string,
+  amount:  string,
+  address: string,
+  type:    "float" | "fixed" = "float",
+): Promise<FFOrderResult> {
+  // Validate required fields
+  if (!address || typeof address !== "string" || address.trim().length === 0)
+    throw new Error("Se requiere la dirección de destino (address) para crear la orden de swap.");
+  if (!from || !to)
+    throw new Error("Se requieren los símbolos de moneda de origen y destino.");
+  const numAmount = parseFloat(amount);
+  if (!amount || isNaN(numAmount) || numAmount <= 0)
+    throw new Error(`Monto inválido para la orden de swap: "${amount}". Debe ser un número mayor a cero.`);
+
+  // Use v1 public API when credentials are not configured
+  if (!isFFConfigured()) {
+    console.log("[ff] API key not configured — using v1 public API");
+    return ffCreateOrderPublic(from, to, amount, address, type);
+  }
+
+  // v2 authenticated API
+  const body = JSON.stringify({ from, to, amount, address, type });
+  const res  = await fetch(`${FF_BASE}/create`, {
+    method:  "POST",
+    headers: ffHeaders(body),
+    body,
+    signal:  AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`FixedFloat /create HTTP ${res.status}`);
+
+  const json = await res.json() as any;
+  return parseOrderResponse(json, from, to, amount);
 }
