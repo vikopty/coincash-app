@@ -673,9 +673,13 @@ export type SwapDirection = "usdt_to_trx" | "trx_to_usdt";
 
 export interface SwapRate {
   trxUsd:         number;
-  feeRate:        number;   // 0.02 = 2 %
-  relayerAddress: string;   // B58 — send input tokens here
+  trxPerUsdt:     number;   // TRX per 1 USDT (primary display unit)
+  feeRate:        number;   // 0 in FF flow — spread built into rate
+  coinCashFee:    number;   // flat 1 USDT platform fee
+  relayerAddress: string;   // B58 — user sends input tokens here
   swapAvailable:  boolean;
+  ffConfigured:   boolean;  // whether FixedFloat API is configured
+  provider:       string;   // "fixedfloat" | "local"
 }
 
 export interface SwapQuote {
@@ -683,10 +687,11 @@ export interface SwapQuote {
   direction:        SwapDirection;
   inputAmount:      number;           // total sent to relayer (USDT or TRX)
   coinCashFeeUsdt:  number;           // flat 1 USDT CoinCash platform fee
-  swapAmount:       number;           // inputAmount − coinCashFeeUsdt for USDT→TRX
-  outputAmount:     number;           // user receives (after all fees)
-  feeAmount:        number;           // 2% swap fee in output token
-  trxUsd:           number;
+  swapAmount:       number;           // amount forwarded to FixedFloat (after CoinCash fee)
+  outputAmount:     number;           // FF estimated output (what user receives)
+  feeAmount:        number;           // 0 in FF flow — spread built into exchange rate
+  trxUsd:           number;           // implied USD/TRX rate
+  trxPerUsdt:       number;           // TRX per 1 USDT (primary display unit)
   relayerAddress:   string;
   inputToken:       "USDT" | "TRX";
   outputToken:      "USDT" | "TRX";
@@ -694,12 +699,13 @@ export interface SwapQuote {
 }
 
 export interface SwapResult {
-  inputTxId:    string;
-  outputTxId:   string;
-  feeTxId?:     string;
-  outputAmount: number;
-  feeAmount:    number;
-  direction:    SwapDirection;
+  inputTxId:     string;    // user → relayer
+  relayTxId:     string;    // relayer → FixedFloat deposit address
+  ffOrderId:     string;    // FixedFloat order ID
+  ffDepositAddr: string;    // FixedFloat deposit address (for reference)
+  outputAmount:  number;    // FF expected output amount
+  feeAmount:     number;    // 0 in FF flow
+  direction:     SwapDirection;
 }
 
 // ── Build + sign TRX tx (without broadcasting) ────────────────────────────────
@@ -757,7 +763,10 @@ export async function fetchSwapRate(): Promise<SwapRate> {
     if (!res.ok) throw new Error("not ok");
     return res.json();
   } catch {
-    return { trxUsd: 0, feeRate: 0.02, relayerAddress: "", swapAvailable: false };
+    return {
+      trxUsd: 0, trxPerUsdt: 0, feeRate: 0, coinCashFee: 1,
+      relayerAddress: "", swapAvailable: false, ffConfigured: false, provider: "unknown",
+    };
   }
 }
 

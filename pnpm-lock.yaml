@@ -169,6 +169,9 @@ importers:
       '@noble/secp256k1':
         specifier: ^3.0.0
         version: 3.0.0
+      '@types/pg':
+        specifier: ^8.18.0
+        version: 8.18.0
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
@@ -187,6 +190,9 @@ importers:
       express:
         specifier: ^5
         version: 5.2.1
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
     devDependencies:
       '@types/cookie-parser':
         specifier: ^1.4.10

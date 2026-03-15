@@ -1,40 +1,44 @@
 // @ts-nocheck
-// CoinCash Swap Engine
-// Handles TRX/USDT price fetching, quote management, and swap execution.
-// The relayer wallet must hold sufficient TRX and USDT to fill swaps.
+// CoinCash Swap Engine — powered by FixedFloat
+// Pricing and execution delegated to FixedFloat API v2.
+// Flow: user signs tx → relayer receives → relayer creates FF order
+//       → relayer sends to FF deposit address → FF delivers to user wallet.
 
 import { createHash } from "node:crypto";
 import { sign as secp256k1Sign } from "@noble/secp256k1";
+import { ffGetPrice, ffCreateOrder, isFFConfigured } from "./fixedFloat.js";
+import { logSwapOrder, updateSwapOrderTxIds } from "./db.js";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const TRON_GRID       = "https://api.trongrid.io";
 const API_KEY         = process.env.VITE_TRON_API_KEY          ?? "";
 const RELAY_KEY       = process.env.TRON_RELAYER_PRIVATE_KEY   ?? "";
 const _RELAY_ADDR_RAW = process.env.TRON_RELAYER_ADDRESS       ?? "";
-const TREASURY_ADDR   = process.env.TREASURY_ADDRESS           ?? ""; // B58
+const TREASURY_ADDR   = process.env.TREASURY_ADDRESS           ?? "";
 
 const USDT_CONTRACT_B58 = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
-// ── Normalize relayer address to 42-char hex (TronGrid always wants hex) ─────
-// The env var may be set as B58 ("TLi92d...") or already as hex ("41abc...").
-// Mixing B58 and hex in the same API call → "string did not match expected pattern".
+// FixedFloat currency codes for TRON tokens
+const FF_USDT = "USDTTRC20";
+const FF_TRX  = "TRX";
+
+// ── Normalize relayer address to 42-char hex ──────────────────────────────────
 function normalizeToHex(raw: string): string {
   if (!raw) return "";
   if (raw.startsWith("41") && raw.length === 42 && /^[0-9a-fA-F]+$/.test(raw)) return raw.toLowerCase();
   try { return tronB58ToHex(raw); } catch { return raw; }
 }
-const RELAY_ADDR = normalizeToHex(_RELAY_ADDR_RAW); // always 42-char hex
+const RELAY_ADDR = normalizeToHex(_RELAY_ADDR_RAW);
 
-// ── Safe SUN conversion — guarantees a true integer (no floats to TronGrid) ──
+// ── SUN conversion ────────────────────────────────────────────────────────────
 function toSun(amount: number): number {
   const raw = typeof amount === "string" ? parseFloat((amount as string).replace(/,/g, ".")) : amount;
   if (!isFinite(raw) || raw <= 0) throw new Error(`Monto inválido: ${amount}`);
   return Math.trunc(Math.round(raw * 1_000_000));
 }
 
-export const SWAP_FEE_RATE      = 0.02;   // 2 % CoinCash swap fee (of output)
-export const QUOTE_TTL_MS       = 60_000; // quotes expire after 60 s
-export const COINCASH_FEE_USDT  = 1;      // flat CoinCash platform fee (always USDT)
+export const COINCASH_FEE_USDT  = 1;      // flat 1 USDT CoinCash platform fee
+export const QUOTE_TTL_MS       = 90_000; // quotes expire after 90 s (FF orders need time)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function hexToBytes(hex: string): Uint8Array {
@@ -60,9 +64,8 @@ export function tronB58ToHex(b58: string): string {
 }
 
 export function tronHexToB58(hex: string): string {
-  // Normalise: strip 0x, ensure 42 chars (21 bytes) with 41 prefix
   let h = hex.startsWith("0x") ? hex.slice(2) : hex;
-  if (h.length === 40) h = "41" + h;   // add TRON version byte if missing
+  if (h.length === 40) h = "41" + h;
   if (h.length !== 42) throw new Error(`Bad TRON hex length: ${h.length}`);
 
   const bytes = new Uint8Array(21);
@@ -80,7 +83,6 @@ export function tronHexToB58(hex: string): string {
 
   let result = "";
   while (n > 0n) { result = B58_CHARS[Number(n % 58n)] + result; n /= 58n; }
-  // Each leading zero byte → one extra leading '1'
   for (const b of full) { if (b !== 0) break; result = "1" + result; }
   return result;
 }
@@ -112,122 +114,7 @@ async function broadcastTx(signedTx: any): Promise<{ result: boolean; txID: stri
   return res.json();
 }
 
-// ── Price cache ───────────────────────────────────────────────────────────────
-let _priceCache: { usd: number; ts: number } | null = null;
-
-export async function fetchTRXPrice(): Promise<number> {
-  if (_priceCache && Date.now() - _priceCache.ts < 10_000) return _priceCache.usd;
-  try {
-    const res = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=tron&vs_currencies=usd",
-      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8_000) }
-    );
-    if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
-    const data = await res.json() as any;
-    const usd = data?.tron?.usd ?? 0;
-    if (!usd) throw new Error("Bad CoinGecko response");
-    _priceCache = { usd, ts: Date.now() };
-    console.log(`[swap] TRX price refreshed: $${usd}`);
-    return usd;
-  } catch (err: any) {
-    console.warn("[swap] CoinGecko error:", err?.message);
-    if (_priceCache) return _priceCache.usd; // use stale
-    throw new Error("No se pudo obtener el precio de TRX.");
-  }
-}
-
-// ── Quote store (server-side, short-lived) ────────────────────────────────────
-export type SwapDirection = "usdt_to_trx" | "trx_to_usdt";
-
-export interface SwapQuote {
-  quoteId:          string;
-  direction:        SwapDirection;
-  inputAmount:      number;           // total user sends (USDT or TRX) to relayer
-  coinCashFeeUsdt:  number;           // flat 1 USDT platform fee (deducted first for USDT→TRX, from output for TRX→USDT)
-  swapAmount:       number;           // amount actually converted (inputAmount − coinCashFeeUsdt for USDT→TRX)
-  outputAmount:     number;           // what user receives (after swap fee)
-  feeAmount:        number;           // 2% swap fee in output token
-  trxUsd:           number;           // price used
-  relayerAddress:   string;           // user sends input tokens HERE (B58)
-  inputToken:       "USDT" | "TRX";
-  outputToken:      "USDT" | "TRX";
-  expiresAt:        number;
-}
-
-const _quotes = new Map<string, SwapQuote>();
-
-// Clean up expired quotes every minute
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, q] of _quotes) { if (q.expiresAt < now) _quotes.delete(id); }
-}, 60_000);
-
-export async function createSwapQuote(
-  direction: SwapDirection,
-  inputAmount: number,
-): Promise<SwapQuote> {
-  if (!RELAY_ADDR) throw new Error("Relayer no configurado.");
-  if (inputAmount <= 0) throw new Error("Monto inválido.");
-
-  const trxUsd    = await fetchTRXPrice();
-  const relayerB58 = getRelayerB58();
-
-  let inputToken:  "USDT" | "TRX";
-  let outputToken: "USDT" | "TRX";
-  let swapAmount:  number;   // amount actually converted (after CoinCash fee)
-  let grossOutput: number;
-
-  if (direction === "usdt_to_trx") {
-    // ── USDT → TRX ────────────────────────────────────────────────────────────
-    // 1. Deduct flat CoinCash fee from the USDT input FIRST
-    // 2. Convert the remainder to TRX at the live price
-    if (inputAmount <= COINCASH_FEE_USDT)
-      throw new Error(`El monto mínimo para swap USDT→TRX es ${COINCASH_FEE_USDT + 0.01} USDT.`);
-
-    inputToken  = "USDT";
-    outputToken = "TRX";
-    swapAmount  = inputAmount - COINCASH_FEE_USDT;   // e.g. 8 - 1 = 7 USDT
-    grossOutput = swapAmount / trxUsd;               // e.g. 7 / 0.299 ≈ 23.4 TRX
-
-  } else {
-    // ── TRX → USDT ────────────────────────────────────────────────────────────
-    // 1. Convert the full TRX input to USDT at the live price
-    // 2. Deduct flat CoinCash fee from the USDT output
-    inputToken  = "TRX";
-    outputToken = "USDT";
-    swapAmount  = inputAmount;                       // all TRX gets swapped
-    grossOutput = inputAmount * trxUsd;              // USDT before fees
-  }
-
-  // 2 % swap fee on the gross output (in output token)
-  const feeAmount = grossOutput * SWAP_FEE_RATE;
-  let   outputAmount = grossOutput - feeAmount;      // after 2% swap fee
-
-  // For TRX→USDT: additionally deduct the 1 USDT CoinCash fee from USDT output
-  if (direction === "trx_to_usdt") {
-    outputAmount = Math.max(0, outputAmount - COINCASH_FEE_USDT);
-  }
-
-  const quoteId = createHash("sha256")
-    .update(`${Date.now()}${direction}${inputAmount}${Math.random()}`)
-    .digest("hex")
-    .slice(0, 16);
-
-  const quote: SwapQuote = {
-    quoteId, direction,
-    inputAmount,                        // full amount user sends to relayer
-    coinCashFeeUsdt: COINCASH_FEE_USDT, // always 1 USDT
-    swapAmount,                         // amount after CoinCash fee (for display)
-    outputAmount, feeAmount,
-    trxUsd, relayerAddress: relayerB58,
-    inputToken, outputToken,
-    expiresAt: Date.now() + QUOTE_TTL_MS,
-  };
-  _quotes.set(quoteId, quote);
-  return quote;
-}
-
-// ── Address validation helper (hex-specific, for backend use) ─────────────────
+// ── Address validation ────────────────────────────────────────────────────────
 function assertValidHex(addr: string, label: string): void {
   if (!addr || !/^41[0-9a-fA-F]{40}$/.test(addr))
     throw new Error(`${label} inválida: "${addr}" (debe ser hex 41-prefixed de 42 chars)`);
@@ -240,32 +127,19 @@ function assertValidRecipientHex(addr: string, label: string): void {
 // ── Send TRX from relayer ─────────────────────────────────────────────────────
 async function sendTRXFromRelayer(toHex: string, amountTRX: number): Promise<string> {
   if (!RELAY_KEY || !RELAY_ADDR) throw new Error("Relayer no configurado.");
-
-  // 1. Coerce to number — reject NaN / strings / nulls immediately
   const amt = Number(amountTRX);
-  if (!isFinite(amt) || amt <= 0)
-    throw new Error(`Monto TRX inválido para el relayer: ${amountTRX}`);
-
-  // 2. Convert to SUN integer — toSun uses Math.trunc(Math.round(n*1e6))
+  if (!isFinite(amt) || amt <= 0) throw new Error(`Monto TRX inválido: ${amountTRX}`);
   const amountSun = toSun(amt);
   if (!Number.isInteger(amountSun) || amountSun <= 0)
     throw new Error(`Error convirtiendo a SUN: ${amt} TRX → ${amountSun}`);
 
-  // 3. Validate both addresses before touching TronGrid
   assertValidHex(RELAY_ADDR, "Dirección del relayer (owner)");
   assertValidRecipientHex(toHex, "Dirección del destinatario (to_address)");
-  console.log("[swap:sendTRXFromRelayer]", {
-    Router:    RELAY_ADDR,
-    To:        toHex,
-    Amount:    amt,
-    AmountSun: amountSun,
-  });
+  console.log("[swap:sendTRXFromRelayer]", { Router: RELAY_ADDR, To: toHex, Amount: amt, AmountSun: amountSun });
 
   await rateWait();
   const res = await fetch(`${TRON_GRID}/wallet/createtransaction`, {
-    method: "POST",
-    headers: apiHeaders(),
-    // Both addresses in same hex format — RELAY_ADDR normalised at startup
+    method: "POST", headers: apiHeaders(),
     body: JSON.stringify({ owner_address: RELAY_ADDR, to_address: toHex, amount: amountSun }),
   });
   if (!res.ok) throw new Error(`Error creando tx TRX (${res.status})`);
@@ -280,42 +154,29 @@ async function sendTRXFromRelayer(toHex: string, amountTRX: number): Promise<str
 // ── Send USDT from relayer ────────────────────────────────────────────────────
 async function sendUSDTFromRelayer(toHex: string, amountUSDT: number): Promise<string> {
   if (!RELAY_KEY || !RELAY_ADDR) throw new Error("Relayer no configurado.");
-
-  // 1. Coerce to number — reject NaN / strings / nulls immediately
   const amt = Number(amountUSDT);
-  if (!isFinite(amt) || amt <= 0)
-    throw new Error(`Monto USDT inválido para el relayer: ${amountUSDT}`);
-
-  // 2. Convert to SUN integer — toSun uses Math.trunc(Math.round(n*1e6))
+  if (!isFinite(amt) || amt <= 0) throw new Error(`Monto USDT inválido: ${amountUSDT}`);
   const amtSun = toSun(amt);
   if (!Number.isInteger(amtSun) || amtSun <= 0)
     throw new Error(`Error convirtiendo a SUN: ${amt} USDT → ${amtSun}`);
 
-  // 3. Validate all three hex addresses before touching TronGrid
   assertValidHex(RELAY_ADDR, "Dirección del relayer (owner)");
   assertValidRecipientHex(toHex, "Dirección del destinatario (to_address)");
 
   const contractHex = tronB58ToHex(USDT_CONTRACT_B58);
   const toHex20     = toHex.slice(2);
   const toParam     = toHex20.padStart(64, "0");
-  const amtRaw      = BigInt(amtSun);   // integer — never a float
+  const amtRaw      = BigInt(amtSun);
   const amtParam    = amtRaw.toString(16).padStart(64, "0");
   const parameter   = toParam + amtParam;
 
   console.log("[swap:sendUSDTFromRelayer]", {
-    Router:      RELAY_ADDR,
-    Token:       contractHex,
-    To:          toHex,
-    Amount:      amt,
-    AmountSun:   amtSun,
-    parameter,
+    Router: RELAY_ADDR, Token: contractHex, To: toHex, Amount: amt, AmountSun: amtSun,
   });
 
   await rateWait();
   const res = await fetch(`${TRON_GRID}/wallet/triggersmartcontract`, {
-    method: "POST",
-    headers: apiHeaders(),
-    // RELAY_ADDR is normalised to hex at startup — never mix B58/hex in one request
+    method: "POST", headers: apiHeaders(),
     body: JSON.stringify({
       owner_address:     RELAY_ADDR,
       contract_address:  contractHex,
@@ -334,20 +195,181 @@ async function sendUSDTFromRelayer(toHex: string, amountUSDT: number): Promise<s
   return signed.txID as string;
 }
 
-// ── Execute swap ──────────────────────────────────────────────────────────────
-export interface SwapResult {
-  inputTxId:    string;
-  outputTxId:   string;
-  feeTxId?:     string;
-  outputAmount: number;
-  feeAmount:    number;
-  direction:    SwapDirection;
+// ── Price cache (CoinGecko fallback when FF not configured) ───────────────────
+let _priceCache: { usd: number; ts: number } | null = null;
+
+export async function fetchTRXPrice(): Promise<number> {
+  if (_priceCache && Date.now() - _priceCache.ts < 10_000) return _priceCache.usd;
+  try {
+    const res = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=tron&vs_currencies=usd",
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8_000) }
+    );
+    if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
+    const data = await res.json() as any;
+    const usd = data?.tron?.usd ?? 0;
+    if (!usd) throw new Error("Bad CoinGecko response");
+    _priceCache = { usd, ts: Date.now() };
+    return usd;
+  } catch (err: any) {
+    console.warn("[swap] CoinGecko error:", err?.message);
+    if (_priceCache) return _priceCache.usd;
+    throw new Error("No se pudo obtener el precio de TRX.");
+  }
 }
 
+// ── Get TRX price via FF (more accurate, same source as quotes) ───────────────
+// Uses FF /price with a reference amount. Falls back to CoinGecko.
+let _ffRateCache: { trxUsd: number; trxPerUsdt: number; ts: number } | null = null;
+
+export async function fetchFFRate(): Promise<{ trxUsd: number; trxPerUsdt: number }> {
+  if (_ffRateCache && Date.now() - _ffRateCache.ts < 15_000) {
+    return { trxUsd: _ffRateCache.trxUsd, trxPerUsdt: _ffRateCache.trxPerUsdt };
+  }
+  try {
+    // Reference amount: 10 USDT → TRX
+    const price = await ffGetPrice(FF_USDT, FF_TRX, "10", "float");
+    const trxPerUsdt = parseFloat(price.price);   // TRX per USDT
+    if (!trxPerUsdt || trxPerUsdt <= 0) throw new Error("FF returned zero rate");
+    const trxUsd = 1 / trxPerUsdt;  // USD per TRX
+    _ffRateCache = { trxUsd, trxPerUsdt, ts: Date.now() };
+    console.log(`[swap] FF rate: 1 USDT ≈ ${trxPerUsdt.toFixed(2)} TRX  ($${trxUsd.toFixed(4)})`);
+    return { trxUsd, trxPerUsdt };
+  } catch (err: any) {
+    console.warn("[swap] FF rate fetch failed, falling back to CoinGecko:", err?.message);
+    const trxUsd     = await fetchTRXPrice();
+    const trxPerUsdt = 1 / trxUsd;
+    return { trxUsd, trxPerUsdt };
+  }
+}
+
+// ── Quote types ───────────────────────────────────────────────────────────────
+export type SwapDirection = "usdt_to_trx" | "trx_to_usdt";
+
+export interface SwapQuote {
+  quoteId:          string;
+  direction:        SwapDirection;
+  inputAmount:      number;        // total the user sends to relayer
+  coinCashFeeUsdt:  number;        // 1 USDT flat fee (always displayed in USDT)
+  swapAmount:       number;        // amount actually forwarded to FixedFloat
+  outputAmount:     number;        // FF estimated output (what user receives)
+  feeAmount:        number;        // always 0 — FF's spread is built into the rate
+  trxUsd:           number;        // implied TRX/USD rate from FF price
+  trxPerUsdt:       number;        // TRX per 1 USDT (primary display unit)
+  relayerAddress:   string;        // user sends tokens HERE (B58 of relayer)
+  inputToken:       "USDT" | "TRX";
+  outputToken:      "USDT" | "TRX";
+  expiresAt:        number;
+  // FF-specific
+  ffFromCurrency:   string;        // e.g. "USDTTRC20"
+  ffToCurrency:     string;        // e.g. "TRX"
+  ffSwapAmount:     string;        // stringified amount sent to FF
+}
+
+const _quotes = new Map<string, SwapQuote>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, q] of _quotes) { if (q.expiresAt < now) _quotes.delete(id); }
+}, 60_000);
+
+// ── Create quote (calls FF /price) ────────────────────────────────────────────
+export async function createSwapQuote(
+  direction: SwapDirection,
+  inputAmount: number,
+): Promise<SwapQuote> {
+  if (!RELAY_ADDR) throw new Error("Relayer no configurado.");
+  if (inputAmount <= 0) throw new Error("Monto inválido.");
+
+  const relayerB58 = getRelayerB58();
+  const { trxUsd, trxPerUsdt } = await fetchFFRate();
+
+  let inputToken:   "USDT" | "TRX";
+  let outputToken:  "USDT" | "TRX";
+  let swapAmount:   number;        // what we forward to FF
+  let ffFrom:       string;
+  let ffTo:         string;
+  let outputAmount: number;
+
+  if (direction === "usdt_to_trx") {
+    // Deduct 1 USDT CoinCash fee first, forward the rest to FF
+    if (inputAmount <= COINCASH_FEE_USDT)
+      throw new Error(`El monto mínimo para swap USDT→TRX es ${COINCASH_FEE_USDT + 0.01} USDT.`);
+
+    inputToken  = "USDT";
+    outputToken = "TRX";
+    swapAmount  = parseFloat((inputAmount - COINCASH_FEE_USDT).toFixed(6));
+    ffFrom      = FF_USDT;
+    ffTo        = FF_TRX;
+
+    // Ask FF what this swapAmount yields
+    try {
+      const price   = await ffGetPrice(ffFrom, ffTo, swapAmount.toFixed(6), "float");
+      outputAmount  = parseFloat(price.estimated) || (swapAmount * trxPerUsdt);
+    } catch {
+      outputAmount  = swapAmount * trxPerUsdt * 0.99;  // conservative local estimate
+    }
+
+  } else {
+    // TRX → USDT
+    // CoinCash fee charged in TRX (equivalent value to 1 USDT)
+    const coinCashTRX = 1 / trxPerUsdt;  // TRX equivalent of 1 USDT
+    swapAmount = Math.max(0, inputAmount - coinCashTRX);
+    if (swapAmount <= 0) throw new Error("Monto TRX insuficiente para cubrir la comisión.");
+
+    inputToken  = "TRX";
+    outputToken = "USDT";
+    ffFrom      = FF_TRX;
+    ffTo        = FF_USDT;
+
+    try {
+      const price  = await ffGetPrice(ffFrom, ffTo, swapAmount.toFixed(6), "float");
+      outputAmount = parseFloat(price.estimated) || (swapAmount * trxUsd);
+    } catch {
+      outputAmount = swapAmount * trxUsd * 0.99;
+    }
+  }
+
+  const quoteId = createHash("sha256")
+    .update(`${Date.now()}${direction}${inputAmount}${Math.random()}`)
+    .digest("hex")
+    .slice(0, 16);
+
+  const quote: SwapQuote = {
+    quoteId, direction,
+    inputAmount,
+    coinCashFeeUsdt: COINCASH_FEE_USDT,
+    swapAmount,
+    outputAmount,
+    feeAmount:  0,  // FF includes spread in the rate — no separate CoinCash swap fee
+    trxUsd, trxPerUsdt,
+    relayerAddress: relayerB58,
+    inputToken, outputToken,
+    expiresAt: Date.now() + QUOTE_TTL_MS,
+    ffFromCurrency: ffFrom,
+    ffToCurrency:   ffTo,
+    ffSwapAmount:   swapAmount.toFixed(6),
+  };
+  _quotes.set(quoteId, quote);
+  return quote;
+}
+
+// ── Result types ──────────────────────────────────────────────────────────────
+export interface SwapResult {
+  inputTxId:      string;    // user → relayer
+  relayTxId:      string;    // relayer → FF deposit address
+  ffOrderId:      string;    // FixedFloat order ID (for status tracking)
+  ffDepositAddr:  string;    // FF deposit address (for reference)
+  outputAmount:   number;    // FF's expected output amount
+  feeAmount:      number;    // always 0 in FF flow
+  direction:      SwapDirection;
+}
+
+// ── Execute swap (FF-powered) ─────────────────────────────────────────────────
 export async function executeSwap(
-  quoteId:     string,
-  signedInputTx: any,  // pre-signed by user: sends inputToken → relayer
-  userAddress: string, // B58 — receives output tokens
+  quoteId:       string,
+  signedInputTx: any,   // pre-signed by user: sends inputToken → relayer
+  userAddress:   string, // B58 — receives output tokens FROM FF
 ): Promise<SwapResult> {
   const quote = _quotes.get(quoteId);
   if (!quote) throw new Error("Cotización expirada o inválida. Solicita una nueva.");
@@ -355,87 +377,115 @@ export async function executeSwap(
     _quotes.delete(quoteId);
     throw new Error("La cotización ha expirado. Solicita una nueva.");
   }
-  _quotes.delete(quoteId); // consume it (one-time use)
+  _quotes.delete(quoteId); // one-time use
 
-  // Validate user address before any network calls
   if (!userAddress || (!userAddress.startsWith("T") && !/^41[0-9a-fA-F]{40}$/.test(userAddress)))
     throw new Error(`Dirección del usuario inválida: "${userAddress}"`);
 
   const userHex = tronB58ToHex(userAddress);
+
   console.log("[swap:executeSwap]", {
-    QuoteId:   quoteId,
-    Direction: quote.direction,
-    UserB58:   userAddress,
-    UserHex:   userHex,
-    Output:    quote.outputAmount,
-    Relayer:   RELAY_ADDR,
+    QuoteId:    quoteId,
+    Direction:  quote.direction,
+    UserB58:    userAddress,
+    SwapAmount: quote.swapAmount,
+    FFFrom:     quote.ffFromCurrency,
+    FFTo:       quote.ffToCurrency,
   });
 
-  // 1. Broadcast user's input tx (they pay into the relayer)
+  // 1. Create FixedFloat order BEFORE broadcasting user tx (get deposit address first)
+  //    FF sends output to user's wallet directly.
+  console.log("[swap] Creating FF order…");
+  const ffOrder = await ffCreateOrder(
+    quote.ffFromCurrency,
+    quote.ffToCurrency,
+    quote.ffSwapAmount,
+    userAddress,   // FF delivers output here
+    "float",
+  );
+  if (!ffOrder.depositAddress)
+    throw new Error("FixedFloat no devolvió una dirección de depósito.");
+
+  console.log("[swap] FF order created:", {
+    id:      ffOrder.id,
+    deposit: ffOrder.depositAddress,
+    expect:  ffOrder.expectedOutput,
+  });
+
+  // 2. Log order to DB (pending — no tx IDs yet)
+  await logSwapOrder({
+    ffOrderId:      ffOrder.id,
+    ffToken:        ffOrder.token,
+    userWallet:     userAddress,
+    direction:      quote.direction,
+    inputToken:     quote.inputToken,
+    inputAmount:    quote.inputAmount,
+    outputToken:    quote.outputToken,
+    expectedOutput: parseFloat(ffOrder.expectedOutput) || quote.outputAmount,
+    depositAddress: ffOrder.depositAddress,
+    coinCashFee:    quote.coinCashFeeUsdt,
+    status:         "pending",
+  });
+
+  // 3. Broadcast user's input tx (user → relayer)
   const inputBcast = await broadcastTx(signedInputTx);
-  if (!inputBcast.result) {
+  if (!inputBcast.result)
     throw new Error(inputBcast.message ?? "Tu transacción de entrada fue rechazada por la red.");
-  }
+
   const inputTxId = signedInputTx.txID as string;
   console.log(`[swap] Input tx broadcast OK: ${inputTxId}`);
 
-  // Small delay to let the input tx propagate before sending output
+  // 4. Small delay for input tx propagation
   await new Promise(r => setTimeout(r, 2_000));
 
-  // 2. Send output tokens to user
-  let outputTxId: string;
-  if (quote.direction === "usdt_to_trx") {
-    outputTxId = await sendTRXFromRelayer(userHex, quote.outputAmount);
-  } else {
-    outputTxId = await sendUSDTFromRelayer(userHex, quote.outputAmount);
-  }
-  console.log(`[swap] Output tx broadcast OK: ${outputTxId}`);
+  // 5. Send swapAmount from relayer → FF deposit address
+  const depositHex = tronB58ToHex(ffOrder.depositAddress);
+  let relayTxId: string;
 
-  // 3. Send fee to treasury (best-effort — don't fail the swap if this fails)
-  let feeTxId: string | undefined;
-  if (TREASURY_ADDR && quote.feeAmount > 0.0001) {
-    try {
-      const treasuryHex = tronB58ToHex(TREASURY_ADDR);
-      if (quote.direction === "usdt_to_trx") {
-        feeTxId = await sendTRXFromRelayer(treasuryHex, quote.feeAmount);
-      } else {
-        feeTxId = await sendUSDTFromRelayer(treasuryHex, quote.feeAmount);
-      }
-      console.log(`[swap] Fee tx broadcast OK: ${feeTxId}`);
-    } catch (e: any) {
-      console.warn("[swap] Fee collection failed (non-fatal):", e?.message);
-    }
+  console.log("[swap] Sending to FF deposit:", {
+    Wallet:  "Relayer",
+    To:      ffOrder.depositAddress,
+    Token:   quote.ffFromCurrency,
+    Amount:  quote.swapAmount,
+  });
+
+  if (quote.direction === "usdt_to_trx") {
+    // Relayer sends USDT to FF deposit address
+    relayTxId = await sendUSDTFromRelayer(depositHex, quote.swapAmount);
+  } else {
+    // Relayer sends TRX to FF deposit address
+    relayTxId = await sendTRXFromRelayer(depositHex, quote.swapAmount);
   }
+  console.log(`[swap] Relay tx broadcast OK: ${relayTxId}`);
+
+  // 6. Update DB with tx IDs
+  await updateSwapOrderTxIds(ffOrder.id, inputTxId, relayTxId, "sent");
 
   return {
     inputTxId,
-    outputTxId,
-    feeTxId,
-    outputAmount: quote.outputAmount,
-    feeAmount:    quote.feeAmount,
-    direction:    quote.direction,
+    relayTxId,
+    ffOrderId:     ffOrder.id,
+    ffDepositAddr: ffOrder.depositAddress,
+    outputAmount:  parseFloat(ffOrder.expectedOutput) || quote.outputAmount,
+    feeAmount:     0,
+    direction:     quote.direction,
   };
 }
 
-// ── Relayer availability ──────────────────────────────────────────────────────
+// ── Availability ──────────────────────────────────────────────────────────────
 export function isSwapAvailable(): boolean {
-  return !!(RELAY_KEY && RELAY_ADDR);
+  return !!(RELAY_KEY && RELAY_ADDR && isFFConfigured());
 }
 
 export function getRelayerB58(): string {
   if (!RELAY_ADDR) return "";
-  // RELAY_ADDR is already normalised to hex by normalizeToHex() at startup.
-  // Convert back to B58 so the frontend can use it as the "send here" address.
   try {
     const b58 = tronHexToB58(RELAY_ADDR);
-    // Sanity-check: result must look like a real TRON address
     if (!b58.startsWith("T") || b58.length !== 34)
       throw new Error(`tronHexToB58 produced invalid B58: "${b58}"`);
     return b58;
   } catch (e) {
-    // Log the failure clearly — don't silently return a raw hex string that
-    // would later cause "The string did not match the expected pattern" in TronGrid.
-    console.error("[swap] getRelayerB58 failed — RELAY_ADDR may be misconfigured:", e);
-    return "";   // empty → frontend will show "Relayer no configurado"
+    console.error("[swap] getRelayerB58 failed:", e);
+    return "";
   }
 }

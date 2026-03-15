@@ -116,8 +116,6 @@ export default function SwapPage({ wallets, activeTab }: Props) {
     ? (trxUsd > 0 ? swapAmt / trxUsd : 0)
     : swapAmt * trxUsd;
 
-  const swapFeeOut = grossOut * 0.02;
-
   const netOut = swapDir === "usdt_to_trx"
     ? grossOut * 0.98
     : Math.max(0, grossOut * 0.98 - COINCASH_FEE_USDT);
@@ -337,10 +335,12 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                 ["Comisión CoinCash", `−${(quote?.coinCashFeeUsdt ?? 1).toFixed(2)} USDT`,                                          AMBER],
                 ["Monto convertido",  quote?.inputToken === "USDT"
                     ? `${(quote?.swapAmount ?? 0).toFixed(2)} USDT`
-                    : `${(quote?.inputAmount ?? 0).toFixed(4)} TRX`,                                                                "white"],
-                ["Tarifa swap (2%)",  `−${result.feeAmount.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,             AMBER],
-                ["Recibiste ✓",       `${result.outputAmount.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,           GREEN],
-                ["Tasa utilizada",    quote?.trxUsd ? `1 USDT ≈ ${(1 / quote.trxUsd).toFixed(2)} TRX` : "—",                  "rgba(255,255,255,0.35)"],
+                    : `${(quote?.swapAmount ?? 0).toFixed(4)} TRX`,                                                                 "white"],
+                ["Proveedor",         "FixedFloat (tasa float)",                                                                    "rgba(255,255,255,0.5)"],
+                ["Recibiste ✓",       `${result.outputAmount.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,            GREEN],
+                ["Tasa utilizada",    quote?.trxPerUsdt
+                    ? `1 USDT ≈ ${quote.trxPerUsdt.toFixed(2)} TRX`
+                    : quote?.trxUsd ? `1 USDT ≈ ${(1 / quote.trxUsd).toFixed(2)} TRX` : "—",                                      "rgba(255,255,255,0.35)"],
               ].map(([lbl, val, col], i, arr) => (
                 <div key={lbl} className="flex items-center justify-between px-4 py-2.5"
                   style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
@@ -350,9 +350,12 @@ export default function SwapPage({ wallets, activeTab }: Props) {
               ))}
             </div>
 
-            {/* TX IDs */}
-            {[{ label: "TX de entrada", value: result.inputTxId }, { label: "TX de salida", value: result.outputTxId }]
-              .map(({ label, value }) => (
+            {/* TX IDs + FF Order ID */}
+            {[
+              { label: "TX de entrada",        value: result.inputTxId,    mono: true },
+              { label: "TX a FixedFloat",       value: result.relayTxId,    mono: true },
+              ...(result.ffOrderId ? [{ label: "Orden FixedFloat", value: result.ffOrderId, mono: false }] : []),
+            ].map(({ label, value, mono }) => (
                 <div key={label} className="w-full rounded-2xl p-3.5" style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
                   <div className="flex items-center justify-between mb-1.5">
                     <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.3)" }}>{label}</p>
@@ -362,7 +365,8 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                         : <Copy className="h-3 w-3" style={{ color: "rgba(255,255,255,0.4)" }} />}
                     </button>
                   </div>
-                  <p className="text-[10px] font-mono break-all leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>{value}</p>
+                  <p className={`text-[10px] break-all leading-relaxed ${mono ? "font-mono" : "font-medium"}`}
+                    style={{ color: mono ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.7)" }}>{value}</p>
                 </div>
               ))}
 
@@ -435,10 +439,10 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                 ["Comisión CoinCash",  `−${quote.coinCashFeeUsdt.toFixed(2)} USDT`,                                                AMBER],
                 ["Monto a convertir",  quote.inputToken === "USDT"
                     ? `${quote.swapAmount.toFixed(2)} USDT`
-                    : `${quote.inputAmount.toFixed(4)} TRX`,                                                                       "white"],
-                ["Tarifa swap (2%)",   `−${quote.feeAmount.toFixed(quote.outputToken === "USDT" ? 2 : 4)} ${quote.outputToken}`,  AMBER],
-                ["Recibirás ≈",        `${quote.outputAmount.toFixed(quote.outputToken === "USDT" ? 2 : 4)} ${quote.outputToken}`, GREEN],
-                ["Tarifa de red",      "Cubierta por CoinCash ✓",                                                                  GREEN],
+                    : `${quote.swapAmount.toFixed(4)} TRX`,                                                                        "white"],
+                ["Proveedor",          "FixedFloat (tasa float)",                                                                   "rgba(255,255,255,0.5)"],
+                ["Recibirás ≈",        `${quote.outputAmount.toFixed(quote.outputToken === "USDT" ? 2 : 4)} ${quote.outputToken}`,  GREEN],
+                ["Tarifa de red",      "Cubierta por CoinCash ✓",                                                                   GREEN],
               ].map(([lbl, val, col], i, arr) => (
                 <div key={lbl} className="flex items-center justify-between px-4 py-3"
                   style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
@@ -713,18 +717,16 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                       color: "rgba(255,255,255,0.65)",
                     },
                     {
-                      label: "Tarifa swap (2%)",
-                      value: hasAmt && enoughForFee
-                        ? `−${swapFeeOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`
-                        : `— ${receiveToken}`,
-                      color: hasAmt && enoughForFee ? AMBER : "rgba(255,255,255,0.15)",
-                    },
-                    {
                       label: "Tasa de cambio",
                       value: trxUsd > 0
                         ? `1 USDT ≈ ${usdtPerTrx.toFixed(2)} TRX`
                         : "Cargando…",
                       color: "rgba(255,255,255,0.4)",
+                    },
+                    {
+                      label: "Proveedor",
+                      value: "FixedFloat · tasa float",
+                      color: "rgba(255,255,255,0.35)",
                     },
                   ].map(({ label, value, color }, i, arr) => (
                     <div key={label} className="flex items-center justify-between px-4 py-2.5"
@@ -770,10 +772,10 @@ export default function SwapPage({ wallets, activeTab }: Props) {
               }
             </button>
 
-            {/* CoinGecko attribution + disclaimer */}
+            {/* FixedFloat attribution + disclaimer */}
             <p className="text-center text-[10px] leading-relaxed pb-1"
               style={{ color: "rgba(255,255,255,0.18)" }}>
-              Precio TRX · CoinGecko&nbsp;&nbsp;·&nbsp;&nbsp;Las operaciones de swap son irreversibles en TRON.
+              Swap ejecutado por&nbsp;<span style={{ color: "rgba(255,255,255,0.32)" }}>FixedFloat</span>&nbsp;·&nbsp;Las operaciones son irreversibles en TRON.
             </p>
           </div>
         )}

@@ -1,31 +1,36 @@
 import { Router } from "express";
 import {
-  fetchTRXPrice,
+  fetchFFRate,
   createSwapQuote,
   executeSwap,
   isSwapAvailable,
   getRelayerB58,
-  SWAP_FEE_RATE,
+  COINCASH_FEE_USDT,
   QUOTE_TTL_MS,
   type SwapDirection,
 } from "../lib/swapEngine.js";
+import { isFFConfigured } from "../lib/fixedFloat.js";
 
 const swapRouter = Router();
 
 /**
  * GET /swap/rate
- * Returns TRX/USD price, relayer address, fee rate, and whether swaps are available.
- * The relayer address is the destination for the user's input token payment.
+ * Returns current TRX/USDT exchange rate from FixedFloat (falls back to CoinGecko).
+ * The relayerAddress is where the user sends their input tokens.
  */
 swapRouter.get("/swap/rate", async (_req, res) => {
   try {
-    const trxUsd = await fetchTRXPrice();
+    const { trxUsd, trxPerUsdt } = await fetchFFRate();
     res.json({
       trxUsd,
-      feeRate:        SWAP_FEE_RATE,
+      trxPerUsdt,
+      feeRate:        0,              // no CoinCash % swap fee — FF spread built-in
+      coinCashFee:    COINCASH_FEE_USDT,
       relayerAddress: getRelayerB58(),
       swapAvailable:  isSwapAvailable(),
+      ffConfigured:   isFFConfigured(),
       quoteTTLms:     QUOTE_TTL_MS,
+      provider:       "fixedfloat",
     });
   } catch (err: any) {
     res.status(503).json({ error: err?.message ?? "No se pudo obtener el precio." });
@@ -34,9 +39,8 @@ swapRouter.get("/swap/rate", async (_req, res) => {
 
 /**
  * POST /swap/quote
- * Creates a server-side quote (one-time use, 60 s TTL).
+ * Creates a server-side quote using FixedFloat /price (one-time use, 90 s TTL).
  * Body: { direction: "usdt_to_trx" | "trx_to_usdt", inputAmount: number }
- * Returns a quoteId that the execute endpoint requires.
  */
 swapRouter.post("/swap/quote", async (req, res) => {
   const { direction, inputAmount } = req.body;
@@ -61,14 +65,14 @@ swapRouter.post("/swap/quote", async (req, res) => {
 
 /**
  * POST /swap/execute
- * Executes a swap using a server-side quote.
- * Body: { quoteId: string, signedInputTx: object, userAddress: string }
+ * Executes a swap:
+ *  1. Creates FixedFloat order (gets deposit address + expected output)
+ *  2. Broadcasts user's pre-signed input tx (user → relayer)
+ *  3. Relayer forwards swapAmount to FF deposit address
+ *  4. FF delivers output to user's wallet (async — may take a few minutes)
+ *  5. Logs the full order to database
  *
- * Flow:
- *   1. Validates the quote (must exist and not be expired)
- *   2. Broadcasts user's pre-signed input tx (user → relayer)
- *   3. Sends output tokens from relayer → user
- *   4. Sends 2% fee from relayer → treasury (if configured)
+ * Body: { quoteId: string, signedInputTx: object, userAddress: string }
  */
 swapRouter.post("/swap/execute", async (req, res) => {
   const { quoteId, signedInputTx, userAddress } = req.body;
