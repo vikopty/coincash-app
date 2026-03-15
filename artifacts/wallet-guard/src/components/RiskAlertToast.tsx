@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 import { ShieldCheck, ShieldAlert, Shield, X, ExternalLink } from "lucide-react";
-import type { RiskResult } from "@/hooks/useTransactionMonitor";
+import type { RiskResult } from "@/lib/riskCache";
 
 // ── Palette (matches app theme) ───────────────────────────────────────────────
 const GREEN  = "#19C37D";

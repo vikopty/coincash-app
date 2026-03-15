@@ -16,6 +16,7 @@ import {
 } from "@/lib/tronApi";
 import { decryptPrivateKey, hasEncryptedKey } from "@/lib/security";
 import type { SavedWallet } from "@/pages/WalletsPage";
+import { loadAllRisks, saveRisk, fetchRiskAnalysis, type RiskResult } from "@/lib/riskCache";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const BG     = "#0B0F14";
@@ -124,6 +125,12 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
 
   const canSend = wallet.type !== "watch" && hasEncryptedKey(wallet.id);
 
+  // ── Risk analysis state ────────────────────────────────────────────────────
+  // Map<txId, RiskResult> — populated from cache + background analyses
+  const [risks, setRisks] = useState<Map<string, RiskResult>>(() => loadAllRisks());
+  // Set of txIds currently being analyzed — prevents duplicate requests
+  const analyzingRef = useRef<Set<string>>(new Set());
+
   // Prevent stale-closure double-fetch on fast wallet switches
   const fetchingRef = useRef(false);
 
@@ -208,6 +215,43 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
       .catch(() => { if (!cancelled) setFeeLoading(false); });
     return () => { cancelled = true; };
   }, [view, sendToken]);
+
+  // ── Risk analysis — triggers automatically when transactions are loaded ─────
+  // Refreshes the risk map from cache, then queues analyses for any incoming
+  // USDT txs that don't yet have a stored result.
+  useEffect(() => {
+    if (!txs.length) return;
+
+    // Always sync from cache first (the monitor hook may have stored results)
+    const cached = loadAllRisks();
+    setRisks(cached);
+
+    // Find incoming txs that don't have a risk result yet
+    const pending = txs.filter(tx =>
+      tx.type === "in" &&
+      !cached.has(tx.id) &&
+      !analyzingRef.current.has(tx.id)
+    );
+
+    for (const tx of pending) {
+      if (!tx.counterpart) continue;
+      analyzingRef.current.add(tx.id);
+
+      fetchRiskAnalysis(tx.counterpart)
+        .then(result => {
+          if (!result) return;
+          saveRisk(tx.id, result);
+          setRisks(prev => {
+            const next = new Map(prev);
+            next.set(tx.id, result);
+            return next;
+          });
+        })
+        .finally(() => {
+          analyzingRef.current.delete(tx.id);
+        });
+    }
+  }, [txs]);
 
   // ── QR code ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -520,7 +564,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                 </p>
               </div>
             ) : (
-              <TxList txs={txs.slice(0, 8)} address={wallet.address} />
+              <TxList txs={txs.slice(0, 8)} address={wallet.address} risks={risks} analyzing={analyzingRef.current} />
             )}
           </div>
         )}
@@ -875,7 +919,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                 </p>
               </div>
             ) : (
-              <TxList txs={txs} address={wallet.address} />
+              <TxList txs={txs} address={wallet.address} risks={risks} analyzing={analyzingRef.current} />
             )}
           </div>
         )}
@@ -962,7 +1006,37 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
 }
 
 // ── Transaction list sub-component ────────────────────────────────────────────
-function TxList({ txs, address }: { txs: TxRecord[]; address: string }) {
+interface TxListProps {
+  txs:       TxRecord[];
+  address:   string;
+  risks?:    Map<string, RiskResult>;
+  analyzing?: Set<string>;
+}
+
+function RiskBadge({ result, pending }: { result: RiskResult | undefined; pending: boolean }) {
+  if (pending && !result) {
+    return (
+      <span className="flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-semibold"
+        style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.3)" }}>
+        <Loader2 className="h-2.5 w-2.5 animate-spin" /> riesgo…
+      </span>
+    );
+  }
+  if (!result) return null;
+
+  const { level } = result;
+  const color = level === "HIGH" ? DANGER : level === "MODERATE" ? AMBER : GREEN;
+  const label = level === "HIGH" ? "ALTO" : level === "MODERATE" ? "MOD" : "BAJO";
+
+  return (
+    <span className="flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+      style={{ background: `${color}18`, color }}>
+      {label}
+    </span>
+  );
+}
+
+function TxList({ txs, address, risks, analyzing }: TxListProps) {
   const [copiedTx, setCopiedTx] = useState<string | null>(null);
 
   const copyTxId = (id: string) => {
@@ -975,61 +1049,85 @@ function TxList({ txs, address }: { txs: TxRecord[]; address: string }) {
   return (
     <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: CARD }}>
       {txs.map((tx, i) => {
-        const isIn  = tx.type === "in";
-        const color = isIn ? GREEN : DANGER;
+        const isIn       = tx.type === "in";
+        const color      = isIn ? GREEN : DANGER;
         const tokenColor = tx.token === "USDT" ? TEAL : "#FF2D55";
+        const riskResult = risks?.get(tx.id);
+        const isPending  = isIn && !riskResult && (analyzing?.has(tx.id) ?? false);
 
         return (
-          <div key={tx.id} className="flex items-center gap-3 px-4 py-3.5"
+          <div key={tx.id} className="px-4 py-3.5"
             style={{ borderBottom: i < txs.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-            {/* Direction icon */}
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-              style={{ background: `${color}15` }}>
-              {isIn
-                ? <ArrowDownLeft className="h-4 w-4" style={{ color }} />
-                : <ArrowUpRight className="h-4 w-4" style={{ color }} />
-              }
-            </div>
-
-            {/* Details */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 mb-0.5">
-                <span className="text-xs font-semibold text-white">
-                  {isIn ? "Recibido" : "Enviado"}
-                </span>
-                <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
-                  style={{ background: `${tokenColor}18`, color: tokenColor }}>
-                  {tx.token}
-                </span>
-                {tx.status === "FAILED" && (
-                  <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
-                    style={{ background: `${DANGER}18`, color: DANGER }}>FALLIDA</span>
-                )}
-              </div>
-              <p className="text-[10px] font-mono truncate" style={{ color: "rgba(255,255,255,0.3)" }}>
-                {isIn ? "De: " : "A: "}{tx.counterpart ? `${tx.counterpart.slice(0, 10)}…${tx.counterpart.slice(-6)}` : "—"}
-              </p>
-              <p className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.22)" }}>
-                {fmtDate(tx.ts)}
-              </p>
-            </div>
-
-            {/* Amount + copy */}
-            <div className="flex flex-col items-end gap-1 shrink-0">
-              <span className="text-sm font-bold"
-                style={{ color: isIn ? GREEN : "rgba(255,255,255,0.85)" }}>
-                {isIn ? "+" : "-"}{fmtAmt(tx.amount, tx.token === "USDT" ? 2 : 4)} {tx.token}
-              </span>
-              <button onClick={() => copyTxId(tx.id)}
-                className="flex items-center gap-0.5 text-[9px]"
-                style={{ color: "rgba(255,255,255,0.2)" }}>
-                {copiedTx === tx.id
-                  ? <CheckCheck className="h-2.5 w-2.5" style={{ color: GREEN }} />
-                  : <Copy className="h-2.5 w-2.5" />
+            <div className="flex items-center gap-3">
+              {/* Direction icon */}
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                style={{ background: `${color}15` }}>
+                {isIn
+                  ? <ArrowDownLeft className="h-4 w-4" style={{ color }} />
+                  : <ArrowUpRight  className="h-4 w-4" style={{ color }} />
                 }
-                TX
-              </button>
+              </div>
+
+              {/* Details */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                  <span className="text-xs font-semibold text-white">
+                    {isIn ? "Recibido" : "Enviado"}
+                  </span>
+                  <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                    style={{ background: `${tokenColor}18`, color: tokenColor }}>
+                    {tx.token}
+                  </span>
+                  {tx.status === "FAILED" && (
+                    <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                      style={{ background: `${DANGER}18`, color: DANGER }}>FALLIDA</span>
+                  )}
+                  {/* Risk badge — only for incoming transactions */}
+                  {isIn && <RiskBadge result={riskResult} pending={isPending} />}
+                </div>
+                <p className="text-[10px] font-mono truncate" style={{ color: "rgba(255,255,255,0.3)" }}>
+                  {isIn ? "De: " : "A: "}{tx.counterpart ? `${tx.counterpart.slice(0, 10)}…${tx.counterpart.slice(-6)}` : "—"}
+                </p>
+                <p className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.22)" }}>
+                  {fmtDate(tx.ts)}
+                </p>
+              </div>
+
+              {/* Amount + copy */}
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span className="text-sm font-bold"
+                  style={{ color: isIn ? GREEN : "rgba(255,255,255,0.85)" }}>
+                  {isIn ? "+" : "-"}{fmtAmt(tx.amount, tx.token === "USDT" ? 2 : 4)} {tx.token}
+                </span>
+                <button onClick={() => copyTxId(tx.id)}
+                  className="flex items-center gap-0.5 text-[9px]"
+                  style={{ color: "rgba(255,255,255,0.2)" }}>
+                  {copiedTx === tx.id
+                    ? <CheckCheck className="h-2.5 w-2.5" style={{ color: GREEN }} />
+                    : <Copy className="h-2.5 w-2.5" />
+                  }
+                  TX
+                </button>
+              </div>
             </div>
+
+            {/* Expanded risk detail — only for HIGH risk incoming transactions */}
+            {isIn && riskResult?.level === "HIGH" && (
+              <div className="mt-2 ml-12 flex items-start gap-1.5 rounded-xl px-2.5 py-2"
+                style={{ background: `${DANGER}0C`, border: `1px solid ${DANGER}20` }}>
+                <ShieldAlert className="h-3 w-3 shrink-0 mt-0.5" style={{ color: DANGER }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] font-semibold mb-0.5" style={{ color: DANGER }}>
+                    Remitente de alto riesgo · {riskResult.score}/100
+                  </p>
+                  {riskResult.reasons.slice(0, 2).map((r, ri) => (
+                    <p key={ri} className="text-[9px] leading-snug" style={{ color: "rgba(255,255,255,0.4)" }}>
+                      • {r}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         );
       })}
