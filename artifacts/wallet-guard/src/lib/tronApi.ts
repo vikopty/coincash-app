@@ -616,16 +616,18 @@ export interface SwapRate {
 }
 
 export interface SwapQuote {
-  quoteId:        string;
-  direction:      SwapDirection;
-  inputAmount:    number;
-  outputAmount:   number;
-  feeAmount:      number;
-  trxUsd:         number;
-  relayerAddress: string;
-  inputToken:     "USDT" | "TRX";
-  outputToken:    "USDT" | "TRX";
-  expiresAt:      number;
+  quoteId:          string;
+  direction:        SwapDirection;
+  inputAmount:      number;           // total sent to relayer (USDT or TRX)
+  coinCashFeeUsdt:  number;           // flat 1 USDT CoinCash platform fee
+  swapAmount:       number;           // inputAmount − coinCashFeeUsdt for USDT→TRX
+  outputAmount:     number;           // user receives (after all fees)
+  feeAmount:        number;           // 2% swap fee in output token
+  trxUsd:           number;
+  relayerAddress:   string;
+  inputToken:       "USDT" | "TRX";
+  outputToken:      "USDT" | "TRX";
+  expiresAt:        number;
 }
 
 export interface SwapResult {

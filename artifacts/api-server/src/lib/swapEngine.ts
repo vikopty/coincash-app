@@ -15,8 +15,9 @@ const TREASURY_ADDR   = process.env.TREASURY_ADDRESS           ?? ""; // B58
 
 const USDT_CONTRACT_B58 = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
-export const SWAP_FEE_RATE  = 0.02;   // 2 % CoinCash swap fee
-export const QUOTE_TTL_MS   = 60_000; // quotes expire after 60 s
+export const SWAP_FEE_RATE      = 0.02;   // 2 % CoinCash swap fee (of output)
+export const QUOTE_TTL_MS       = 60_000; // quotes expire after 60 s
+export const COINCASH_FEE_USDT  = 1;      // flat CoinCash platform fee (always USDT)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function hexToBytes(hex: string): Uint8Array {
@@ -122,16 +123,18 @@ export async function fetchTRXPrice(): Promise<number> {
 export type SwapDirection = "usdt_to_trx" | "trx_to_usdt";
 
 export interface SwapQuote {
-  quoteId:        string;
-  direction:      SwapDirection;
-  inputAmount:    number;           // what user sends (USDT or TRX)
-  outputAmount:   number;           // what user receives
-  feeAmount:      number;           // 2% in output token
-  trxUsd:         number;           // price used
-  relayerAddress: string;           // user sends input tokens HERE (B58)
-  inputToken:     "USDT" | "TRX";
-  outputToken:    "USDT" | "TRX";
-  expiresAt:      number;
+  quoteId:          string;
+  direction:        SwapDirection;
+  inputAmount:      number;           // total user sends (USDT or TRX) to relayer
+  coinCashFeeUsdt:  number;           // flat 1 USDT platform fee (deducted first for USDT→TRX, from output for TRX→USDT)
+  swapAmount:       number;           // amount actually converted (inputAmount − coinCashFeeUsdt for USDT→TRX)
+  outputAmount:     number;           // what user receives (after swap fee)
+  feeAmount:        number;           // 2% swap fee in output token
+  trxUsd:           number;           // price used
+  relayerAddress:   string;           // user sends input tokens HERE (B58)
+  inputToken:       "USDT" | "TRX";
+  outputToken:      "USDT" | "TRX";
+  expiresAt:        number;
 }
 
 const _quotes = new Map<string, SwapQuote>();
@@ -149,27 +152,44 @@ export async function createSwapQuote(
   if (!RELAY_ADDR) throw new Error("Relayer no configurado.");
   if (inputAmount <= 0) throw new Error("Monto inválido.");
 
-  const trxUsd = await fetchTRXPrice();
-  const relayerB58 = tronHexToB58(RELAY_ADDR);
+  const trxUsd    = await fetchTRXPrice();
+  const relayerB58 = getRelayerB58();
 
-  let grossOutput: number;
-  let inputToken: "USDT" | "TRX";
+  let inputToken:  "USDT" | "TRX";
   let outputToken: "USDT" | "TRX";
+  let swapAmount:  number;   // amount actually converted (after CoinCash fee)
+  let grossOutput: number;
 
   if (direction === "usdt_to_trx") {
-    // User sends USDT → relay sends TRX
+    // ── USDT → TRX ────────────────────────────────────────────────────────────
+    // 1. Deduct flat CoinCash fee from the USDT input FIRST
+    // 2. Convert the remainder to TRX at the live price
+    if (inputAmount <= COINCASH_FEE_USDT)
+      throw new Error(`El monto mínimo para swap USDT→TRX es ${COINCASH_FEE_USDT + 0.01} USDT.`);
+
     inputToken  = "USDT";
     outputToken = "TRX";
-    grossOutput = inputAmount / trxUsd;
+    swapAmount  = inputAmount - COINCASH_FEE_USDT;   // e.g. 8 - 1 = 7 USDT
+    grossOutput = swapAmount / trxUsd;               // e.g. 7 / 0.299 ≈ 23.4 TRX
+
   } else {
-    // User sends TRX → relay sends USDT
+    // ── TRX → USDT ────────────────────────────────────────────────────────────
+    // 1. Convert the full TRX input to USDT at the live price
+    // 2. Deduct flat CoinCash fee from the USDT output
     inputToken  = "TRX";
     outputToken = "USDT";
-    grossOutput = inputAmount * trxUsd;
+    swapAmount  = inputAmount;                       // all TRX gets swapped
+    grossOutput = inputAmount * trxUsd;              // USDT before fees
   }
 
-  const feeAmount    = grossOutput * SWAP_FEE_RATE;
-  const outputAmount = grossOutput - feeAmount;
+  // 2 % swap fee on the gross output (in output token)
+  const feeAmount = grossOutput * SWAP_FEE_RATE;
+  let   outputAmount = grossOutput - feeAmount;      // after 2% swap fee
+
+  // For TRX→USDT: additionally deduct the 1 USDT CoinCash fee from USDT output
+  if (direction === "trx_to_usdt") {
+    outputAmount = Math.max(0, outputAmount - COINCASH_FEE_USDT);
+  }
 
   const quoteId = createHash("sha256")
     .update(`${Date.now()}${direction}${inputAmount}${Math.random()}`)
@@ -177,8 +197,12 @@ export async function createSwapQuote(
     .slice(0, 16);
 
   const quote: SwapQuote = {
-    quoteId, direction, inputAmount, outputAmount,
-    feeAmount, trxUsd, relayerAddress: relayerB58,
+    quoteId, direction,
+    inputAmount,                        // full amount user sends to relayer
+    coinCashFeeUsdt: COINCASH_FEE_USDT, // always 1 USDT
+    swapAmount,                         // amount after CoinCash fee (for display)
+    outputAmount, feeAmount,
+    trxUsd, relayerAddress: relayerB58,
     inputToken, outputToken,
     expiresAt: Date.now() + QUOTE_TTL_MS,
   };

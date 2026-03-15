@@ -61,18 +61,40 @@ export default function SwapPage({ wallets }: Props) {
   const selectedWallet = signableWallets.find(w => w.id === selectedId) ?? signableWallets[0];
 
   // ── Derived values ─────────────────────────────────────────────────────────
+  const COINCASH_FEE_USDT = 1;           // flat CoinCash platform fee
+
   const sendToken    = swapDir === "usdt_to_trx" ? "USDT" : "TRX";
   const receiveToken = swapDir === "usdt_to_trx" ? "TRX"  : "USDT";
   const trxUsd       = rate?.trxUsd ?? 0;
   const inputAmt     = parseFloat(amount) || 0;
-  const grossOut     = swapDir === "usdt_to_trx"
-    ? (trxUsd > 0 ? inputAmt / trxUsd : 0)
-    : inputAmt * trxUsd;
-  const feeOut       = grossOut * 0.02;
-  const netOut       = grossOut * 0.98;
+
+  // ── Fee-first calculation ──────────────────────────────────────────────────
+  // USDT → TRX:  deduct 1 USDT CoinCash fee FIRST, then convert the remainder
+  // TRX  → USDT: convert everything, then deduct 1 USDT from the USD output
+  const swapAmt = swapDir === "usdt_to_trx"
+    ? Math.max(0, inputAmt - COINCASH_FEE_USDT)   // USDT available for swap
+    : inputAmt;                                     // TRX — fee comes out of output
+
+  const grossOut = swapDir === "usdt_to_trx"
+    ? (trxUsd > 0 ? swapAmt / trxUsd : 0)          // TRX before 2% swap fee
+    : swapAmt * trxUsd;                             // USDT before fees
+
+  const swapFeeOut = grossOut * 0.02;               // 2% swap fee (in receive token)
+
+  const netOut = swapDir === "usdt_to_trx"
+    ? grossOut * 0.98                               // TRX after 2% fee
+    : Math.max(0, grossOut * 0.98 - COINCASH_FEE_USDT);  // USDT after 2% + 1 USDT fee
+
   const hasAmt       = inputAmt > 0 && trxUsd > 0;
-  const sendBalance  = sendToken === "USDT" ? (info?.usdtBalance ?? 0) : (info?.trxBalance ?? 0);
-  const maxSend      = sendToken === "TRX" ? Math.max(0, sendBalance - 2) : sendBalance;
+  const enoughForFee = swapDir === "usdt_to_trx"
+    ? inputAmt > COINCASH_FEE_USDT                 // must be strictly above 1 USDT
+    : true;                                         // TRX → USDT: fee comes from output
+
+  const sendBalance = sendToken === "USDT" ? (info?.usdtBalance ?? 0) : (info?.trxBalance ?? 0);
+  // MAX: for USDT→TRX reserve 1 USDT fee; for TRX→USDT reserve 2 TRX for network
+  const maxSend = sendToken === "TRX"
+    ? Math.max(0, sendBalance - 2)
+    : Math.max(0, sendBalance - COINCASH_FEE_USDT);
 
   // ── Live TRX price — tries CoinGecko directly, falls back to backend ──────────
   // Refresh every 10 seconds as requested.
@@ -135,6 +157,12 @@ export default function SwapPage({ wallets }: Props) {
   // ── Get quote → confirm ─────────────────────────────────────────────────────
   const handleContinue = async () => {
     if (!hasAmt) { toast.error("Ingresa un monto válido."); return; }
+
+    // Minimum check: for USDT→TRX the user must send more than the 1 USDT CoinCash fee
+    if (!enoughForFee) {
+      toast.error(`El monto mínimo para este swap es ${COINCASH_FEE_USDT + 0.01} USDT.`);
+      return;
+    }
     if (inputAmt > maxSend) {
       toast.error(`Saldo insuficiente. Disponible: ${fmtAmt(maxSend, sendToken === "USDT" ? 2 : 4)} ${sendToken}`);
       return;
@@ -143,8 +171,10 @@ export default function SwapPage({ wallets }: Props) {
       toast.error("El servicio de swap no está disponible en este momento.");
       return;
     }
+
     setQuoteLoading(true);
     try {
+      // Pass the full inputAmt — the backend deducts the 1 USDT CoinCash fee internally
       const q = await getSwapQuote(swapDir, inputAmt);
       setQuote(q);
       setStep("confirm");
@@ -243,15 +273,22 @@ export default function SwapPage({ wallets }: Props) {
               </p>
             </div>
 
-            {/* Summary card */}
+            {/* Summary card — 5-line fee breakdown */}
             <div className="w-full rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: CARD2 }}>
+              <div className="px-4 py-2" style={{ background: `${PURPLE}0A`, borderBottom: `1px solid ${BORDER}` }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: PURPLE }}>Resumen</p>
+              </div>
               {[
-                ["Enviaste",         `${quote?.inputAmount.toFixed(sendToken === "USDT" ? 2 : 4) ?? "—"} ${sendToken}`,      "white"],
-                ["Recibiste",        `${result.outputAmount.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,       GREEN],
-                ["Tarifa swap (2%)", `${result.feeAmount.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,          AMBER],
-                ["Tasa utilizada",   `1 TRX ≈ $${quote?.trxUsd.toFixed(4) ?? "—"} USD`,                                      "white"],
+                ["Monto enviado",     `${quote?.inputAmount.toFixed(quote?.inputToken === "USDT" ? 2 : 4) ?? "—"} ${sendToken}`,  "white"],
+                ["Comisión CoinCash", `−${(quote?.coinCashFeeUsdt ?? 1).toFixed(2)} USDT`,                                         AMBER],
+                ["Monto convertido",  quote?.inputToken === "USDT"
+                    ? `${(quote?.swapAmount ?? 0).toFixed(2)} USDT`
+                    : `${(quote?.inputAmount ?? 0).toFixed(4)} TRX`,                                                               "white"],
+                ["Tarifa swap (2%)",  `−${result.feeAmount.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,            AMBER],
+                ["Recibiste",         `${result.outputAmount.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,           GREEN],
+                ["Tasa utilizada",    `1 TRX = $${quote?.trxUsd.toFixed(4) ?? "—"} USD`,                                         "rgba(255,255,255,0.4)"],
               ].map(([lbl, val, col], i, arr) => (
-                <div key={lbl} className="flex items-center justify-between px-4 py-3"
+                <div key={lbl} className="flex items-center justify-between px-4 py-2.5"
                   style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
                   <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{lbl}</span>
                   <span className="text-xs font-bold" style={{ color: col as string }}>{val}</span>
@@ -312,15 +349,24 @@ export default function SwapPage({ wallets }: Props) {
           <div className="flex flex-col gap-5">
             <p className="text-base font-bold text-white">Confirmar Swap</p>
 
-            {/* Summary */}
+            {/* 5-line fee breakdown */}
             <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: CARD2 }}>
+              {/* Header */}
+              <div className="px-4 py-2.5" style={{ background: `${PURPLE}0A`, borderBottom: `1px solid ${BORDER}` }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: PURPLE }}>
+                  Desglose de la operación
+                </p>
+              </div>
               {[
-                ["Envías",              `${quote.inputAmount.toFixed(quote.inputToken === "USDT" ? 2 : 4)} ${quote.inputToken}`,   "white"],
-                ["Recibirás ≈",         `${quote.outputAmount.toFixed(quote.outputToken === "USDT" ? 2 : 4)} ${quote.outputToken}`, GREEN],
-                ["Tarifa swap (2%)",    `${quote.feeAmount.toFixed(quote.outputToken === "USDT" ? 2 : 4)} ${quote.outputToken}`,    AMBER],
-                ["Comisión CoinCash",   "1 USDT",                                                                                    AMBER],
-                ["Tasa de cambio",      `1 TRX ≈ $${quote.trxUsd.toFixed(4)} USD`,                                                  "white"],
-                ["Red",                 "Cubierta por CoinCash ✓",                                                                   GREEN],
+                ["Monto ingresado",   `${quote.inputAmount.toFixed(quote.inputToken === "USDT" ? 2 : 4)} ${quote.inputToken}`,     "white"],
+                ["Comisión CoinCash", `−${quote.coinCashFeeUsdt.toFixed(2)} USDT`,                                                  AMBER],
+                ["Monto a convertir", quote.inputToken === "USDT"
+                    ? `${quote.swapAmount.toFixed(2)} USDT`
+                    : `${quote.inputAmount.toFixed(4)} TRX`,                                                                        "white"],
+                ["Tarifa swap (2%)",  `−${quote.feeAmount.toFixed(quote.outputToken === "USDT" ? 2 : 4)} ${quote.outputToken}`,    AMBER],
+                ["Recibirás ≈",       `${quote.outputAmount.toFixed(quote.outputToken === "USDT" ? 2 : 4)} ${quote.outputToken}`,  GREEN],
+                ["Tasa de cambio",    `1 TRX = $${quote.trxUsd.toFixed(4)} USD`,                                                   "rgba(255,255,255,0.5)"],
+                ["Red",               "Cubierta por CoinCash ✓",                                                                    GREEN],
               ].map(([lbl, val, col], i, arr) => (
                 <div key={lbl} className="flex items-start justify-between px-4 py-3"
                   style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
@@ -531,15 +577,28 @@ export default function SwapPage({ wallets }: Props) {
                 }
               </div>
 
-              {/* Formula row — shown when amount is entered */}
-              {hasAmt && trxUsd > 0 && (
+              {/* Formula row — shows fee-first calculation when amount is entered */}
+              {hasAmt && trxUsd > 0 && enoughForFee && (
                 <div className="px-4 py-2.5"
                   style={{ borderBottom: `1px solid ${BORDER}`, background: "rgba(25,195,125,0.04)" }}>
-                  <p className="text-[10px] font-mono text-center" style={{ color: "rgba(255,255,255,0.35)" }}>
-                    {swapDir === "usdt_to_trx"
-                      ? `${inputAmt.toFixed(2)} USDT ÷ $${trxUsd.toFixed(4)} = ${grossOut.toFixed(4)} TRX`
-                      : `${inputAmt.toFixed(4)} TRX × $${trxUsd.toFixed(4)} = $${grossOut.toFixed(2)} USD`
-                    }
+                  {swapDir === "usdt_to_trx" ? (
+                    <p className="text-[10px] font-mono text-center leading-relaxed"
+                      style={{ color: "rgba(255,255,255,0.35)" }}>
+                      ({inputAmt.toFixed(2)} − 1) USDT ÷ ${trxUsd.toFixed(4)} = {grossOut.toFixed(4)} TRX
+                    </p>
+                  ) : (
+                    <p className="text-[10px] font-mono text-center leading-relaxed"
+                      style={{ color: "rgba(255,255,255,0.35)" }}>
+                      {inputAmt.toFixed(4)} TRX × ${trxUsd.toFixed(4)} = ${grossOut.toFixed(2)} USDT − 1 fee
+                    </p>
+                  )}
+                </div>
+              )}
+              {hasAmt && trxUsd > 0 && !enoughForFee && (
+                <div className="px-4 py-2.5"
+                  style={{ borderBottom: `1px solid ${BORDER}`, background: "rgba(245,158,11,0.06)" }}>
+                  <p className="text-[10px] text-center" style={{ color: AMBER }}>
+                    Monto mínimo: {(COINCASH_FEE_USDT + 0.01).toFixed(2)} USDT (incluye comisión de 1 USDT)
                   </p>
                 </div>
               )}
@@ -569,7 +628,7 @@ export default function SwapPage({ wallets }: Props) {
                 <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Tarifa swap (2%)</span>
                 <span className="text-xs font-semibold" style={{ color: AMBER }}>
                   {hasAmt
-                    ? `−${feeOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`
+                    ? `−${swapFeeOut.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`
                     : `0 ${receiveToken}`
                   }
                 </span>
