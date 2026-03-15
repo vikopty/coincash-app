@@ -25,7 +25,7 @@ function loadWallets(): SavedWallet[] {
 }
 
 function MainApp() {
-  const [tab, setTab]             = useState<Tab>("scanner");
+  const [tab, setTab]             = useState<Tab>("dashboard");
   const [scanAddress, setScanAddress] = useState<string | undefined>();
   const [locked, setLocked]       = useState(() => isPinEnabled());
   const [frozenOpen, setFrozenOpen] = useState(false);
@@ -48,7 +48,7 @@ function MainApp() {
   // ── Transaction monitor (only runs when unlocked and wallets exist) ──────────
   useTransactionMonitor(locked ? [] : wallets, handleScanWallet);
 
-  if (locked) return <PinLockScreen onUnlock={() => setLocked(false)} />;
+  if (locked) return <PinLockScreen onUnlock={() => { setLocked(false); setTab("dashboard"); }} />;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
