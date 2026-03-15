@@ -1000,8 +1000,9 @@ export default function SwapPage({ wallets, activeTab }: Props) {
 
             {/* ── CTA ─────────────────────────────────────────────────────── */}
             {(() => {
-              const isDisabled = extLoading || !hasAmt || !rate?.ffConfigured ||
-                (swapMode === "wallet" && !selectedWallet);
+              const isDisabled = swapMode === "external"
+                ? extLoading || inputAmt <= 0 || !destAddr.trim()
+                : extLoading || !hasAmt || !selectedWallet;
               return (
                 <button
                   onClick={handleContinue}
