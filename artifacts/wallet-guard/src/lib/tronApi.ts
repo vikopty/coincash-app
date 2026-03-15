@@ -605,6 +605,125 @@ async function buildAndSignUSDTTx(
 // Fixed 1 USDT CoinCash service fee applied to every USDT transfer.
 export const SERVICE_FEE_USDT = 1;
 
+// ── Swap types ────────────────────────────────────────────────────────────────
+export type SwapDirection = "usdt_to_trx" | "trx_to_usdt";
+
+export interface SwapRate {
+  trxUsd:         number;
+  feeRate:        number;   // 0.02 = 2 %
+  relayerAddress: string;   // B58 — send input tokens here
+  swapAvailable:  boolean;
+}
+
+export interface SwapQuote {
+  quoteId:        string;
+  direction:      SwapDirection;
+  inputAmount:    number;
+  outputAmount:   number;
+  feeAmount:      number;
+  trxUsd:         number;
+  relayerAddress: string;
+  inputToken:     "USDT" | "TRX";
+  outputToken:    "USDT" | "TRX";
+  expiresAt:      number;
+}
+
+export interface SwapResult {
+  inputTxId:    string;
+  outputTxId:   string;
+  feeTxId?:     string;
+  outputAmount: number;
+  feeAmount:    number;
+  direction:    SwapDirection;
+}
+
+// ── Build + sign TRX tx (without broadcasting) ────────────────────────────────
+// Used in the TRX → USDT swap flow: user signs TRX payment to relayer address.
+async function buildAndSignTRXTx(
+  from: string, to: string, amountTrx: number, privKeyHex: string
+): Promise<any> {
+  const fromHex   = tronAddrToHex(from);
+  const toHex     = tronAddrToHex(to);
+  const amountSun = Math.round(amountTrx * 1_000_000);
+
+  await rateWait();
+  const res = await tronFetch("/wallet/createtransaction", {
+    method: "POST",
+    body: JSON.stringify({ owner_address: fromHex, to_address: toHex, amount: amountSun }),
+  });
+  if (!res.ok) throw new Error(`Error creando tx TRX (${res.status})`);
+  const tx = await res.json();
+  if (tx.Error || !tx.txID) throw new Error(tx.Error ?? "Error creando tx TRX");
+
+  const txHashBytes = hexToBytes(tx.txID);
+  const privBytes   = hexToBytes(privKeyHex);
+  const sig = secp256k1Sign(txHashBytes, privBytes, { lowS: false });
+  return { ...tx, signature: [sig.toCompactHex() + sig.recovery.toString(16).padStart(2, "0")] };
+}
+
+// ── Fetch live TRX/USDT rate + relayer info ───────────────────────────────────
+export async function fetchSwapRate(): Promise<SwapRate> {
+  try {
+    const res = await fetch("/api-server/api/swap/rate");
+    if (!res.ok) throw new Error("not ok");
+    return res.json();
+  } catch {
+    return { trxUsd: 0, feeRate: 0.02, relayerAddress: "", swapAvailable: false };
+  }
+}
+
+// ── Get a server-side swap quote (one-time use, 60 s TTL) ─────────────────────
+export async function getSwapQuote(
+  direction: SwapDirection,
+  inputAmount: number,
+): Promise<SwapQuote> {
+  const res = await fetch("/api-server/api/swap/quote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ direction, inputAmount }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Error de red" }));
+    throw new Error(err.error ?? `Swap quote error ${res.status}`);
+  }
+  return res.json();
+}
+
+// ── Execute a swap via the relay server ───────────────────────────────────────
+// Steps:
+//   1. Obtain (or reuse) a quote from the server
+//   2. Build + sign the input tx (user → relayer): USDT or TRX
+//   3. POST { quoteId, signedInputTx, userAddress } to relay
+//   4. Relay broadcasts input, sends output + fee
+export async function executeSwap(
+  from:          string,        // user B58 address
+  privKeyHex:    string,
+  quote:         SwapQuote,     // server-issued quote
+): Promise<SwapResult> {
+  const { direction, inputAmount, relayerAddress } = quote;
+  if (!relayerAddress) throw new Error("Relayer no configurado.");
+
+  // Build + sign the user's input payment to the relayer
+  let signedInputTx: any;
+  if (direction === "usdt_to_trx") {
+    signedInputTx = await buildAndSignUSDTTx(from, relayerAddress, inputAmount, privKeyHex);
+  } else {
+    signedInputTx = await buildAndSignTRXTx(from, relayerAddress, inputAmount, privKeyHex);
+  }
+
+  const res = await fetch("/api-server/api/swap/execute", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ quoteId: quote.quoteId, signedInputTx, userAddress: from }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Error de red" }));
+    throw new Error(err.error ?? `Swap execute error ${res.status}`);
+  }
+  return res.json();
+}
+
 // ── Relay result type ─────────────────────────────────────────────────────────
 export interface RelayResult {
   txId:      string;

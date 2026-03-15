@@ -5,6 +5,7 @@ import relayRouter from "./relay";
 import bitraceProxyRouter from "./bitraceProxy";
 import riskAnalysisRouter from "./riskAnalysis";
 import bitraceBlacklistRouter from "./bitraceBlacklist";
+import swapRouter from "./swap";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(relayRouter);
 router.use(bitraceProxyRouter);
 router.use(riskAnalysisRouter);
 router.use(bitraceBlacklistRouter);
+router.use(swapRouter);
 
 export default router;
