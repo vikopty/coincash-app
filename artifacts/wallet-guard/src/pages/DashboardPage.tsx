@@ -1,9 +1,10 @@
-import { Ban, ScanSearch, Bell, Wifi } from "lucide-react";
+import { Ban, ScanSearch, Bell, TrendingUp } from "lucide-react";
 
 const BG   = "#0B0F14";
 const CARD = "#121821";
-const GREEN = "#19C37D";
-const BLUE  = "#3B82F6";
+const GREEN  = "#19C37D";
+const BLUE   = "#3B82F6";
+const AMBER  = "#F59E0B";
 const DANGER = "#FF4D4F";
 const BORDER = "rgba(255,255,255,0.06)";
 const SHADOW = "0 4px 24px rgba(0,0,0,0.45)";
@@ -11,9 +12,10 @@ const SHADOW = "0 4px 24px rgba(0,0,0,0.45)";
 interface DashboardPageProps {
   onScanWallet?: (address: string) => void;
   onOpenFrozen?: () => void;
+  onOpenTRM?:    () => void;
 }
 
-const DashboardPage = ({ onScanWallet, onOpenFrozen }: DashboardPageProps) => {
+const DashboardPage = ({ onScanWallet, onOpenFrozen, onOpenTRM }: DashboardPageProps) => {
   const raw     = localStorage.getItem("wg_daily_stats");
   const stats   = raw ? JSON.parse(raw) : { analyzed: 0, highRisk: 0 };
   const wallets = JSON.parse(localStorage.getItem("wg_wallets") || "[]");
@@ -93,7 +95,7 @@ const DashboardPage = ({ onScanWallet, onOpenFrozen }: DashboardPageProps) => {
         {[
           { label: "Escanear",   icon: ScanSearch,    color: GREEN,   action: onScanWallet ? () => onScanWallet("") : undefined },
           { label: "Congelados", icon: Ban,            color: DANGER,  action: onOpenFrozen },
-          { label: "Red TRON",   icon: Wifi,           color: BLUE },
+          { label: "TRM 🇨🇴",   icon: TrendingUp,    color: AMBER,   action: onOpenTRM },
         ].map(({ label, icon: Icon, color, action }) => (
           <button key={label} onClick={action}
             className="flex flex-col items-center gap-2.5 rounded-2xl py-5 px-3 transition-opacity active:opacity-70"

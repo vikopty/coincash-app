@@ -11,6 +11,7 @@ import ScannerPage from "@/pages/ScannerPage";
 import ConnectionsPage from "@/pages/ConnectionsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import BlacklistPage from "@/pages/BlacklistPage";
+import TRMPage from "@/pages/TRMPage";
 import PinLockScreen from "@/components/PinLockScreen";
 import NotFound from "@/pages/not-found";
 import { isPinEnabled } from "@/lib/security";
@@ -29,6 +30,7 @@ function MainApp() {
   const [scanAddress, setScanAddress] = useState<string | undefined>();
   const [locked, setLocked]       = useState(() => isPinEnabled());
   const [frozenOpen, setFrozenOpen] = useState(false);
+  const [trmOpen, setTrmOpen]       = useState(false);
   const [wallets, setWallets]     = useState<SavedWallet[]>(() => loadWallets());
 
   // Keep wallets in sync with localStorage changes (user adds/removes wallets)
@@ -53,8 +55,13 @@ function MainApp() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {frozenOpen && <BlacklistPage onClose={() => setFrozenOpen(false)} />}
+      {trmOpen    && <TRMPage      onClose={() => setTrmOpen(false)}    />}
       <div style={{ display: tab === "dashboard"   ? "block" : "none" }}>
-        <DashboardPage onScanWallet={handleScanWallet} onOpenFrozen={() => setFrozenOpen(true)} />
+        <DashboardPage
+          onScanWallet={handleScanWallet}
+          onOpenFrozen={() => setFrozenOpen(true)}
+          onOpenTRM={() => setTrmOpen(true)}
+        />
       </div>
       <div style={{ display: tab === "wallets"     ? "block" : "none" }}>
         <WalletsPage onScan={handleScanWallet} />
