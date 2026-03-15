@@ -28,6 +28,10 @@ type SwapStep = "form" | "confirm" | "signing" | "done";
 function fmtAmt(n: number, dec = 4) {
   return n.toLocaleString("es-CO", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
+/** Normalize a user-typed amount string: replace commas with dots, strip non-numeric chars. */
+function normAmt(raw: string): string {
+  return raw.replace(/,/g, ".").replace(/[^0-9.]/g, "");
+}
 function truncAddr(a: string) {
   return a.length > 14 ? `${a.slice(0, 7)}…${a.slice(-5)}` : a;
 }
@@ -88,7 +92,7 @@ export default function SwapPage({ wallets }: Props) {
   const sendToken    = swapDir === "usdt_to_trx" ? "USDT" : "TRX";
   const receiveToken = swapDir === "usdt_to_trx" ? "TRX"  : "USDT";
   const trxUsd       = rate?.trxUsd ?? 0;
-  const inputAmt     = parseFloat(amount) || 0;
+  const inputAmt     = parseFloat(normAmt(amount)) || 0;
 
   const swapAmt = swapDir === "usdt_to_trx"
     ? Math.max(0, inputAmt - COINCASH_FEE_USDT)
@@ -492,7 +496,7 @@ export default function SwapPage({ wallets }: Props) {
                   <input
                     ref={inputRef}
                     type="number" inputMode="decimal" placeholder="0.00"
-                    value={amount} onChange={e => setAmount(e.target.value)}
+                    value={amount} onChange={e => setAmount(normAmt(e.target.value))}
                     className="flex-1 bg-transparent text-3xl font-black text-white outline-none placeholder:text-white/20 min-w-0"
                     style={{ letterSpacing: "-0.02em" }}
                   />

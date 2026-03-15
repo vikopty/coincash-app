@@ -336,7 +336,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
     if (!sendTo.startsWith("T") || sendTo.length < 30) {
       toast.error("Dirección TRON inválida."); return false;
     }
-    const amt = parseFloat(sendAmt);
+    const amt = parseFloat(sendAmt.replace(/,/g, "."));
     if (!amt || amt <= 0) { toast.error("Monto inválido."); return false; }
     if (sendToken === "USDT") {
       const usdtBal = info?.usdtBalance ?? 0;
@@ -364,7 +364,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
     setSendStep("signing");
     try {
       const privKey = await decryptPrivateKey(wallet.id);
-      const amt = parseFloat(sendAmt);
+      const amt = parseFloat(sendAmt.replace(/,/g, "."));
       if (sendToken === "TRX") {
         const txId = await sendTRX(wallet.address, sendTo, amt, privKey);
         setSentTxId(txId);
@@ -408,7 +408,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
   // Called when user taps "Continuar" on the swap form:
   // fetches a server-side quote (one-time use) and moves to confirm step.
   const handleSwapContinue = async () => {
-    const amt = parseFloat(swapAmt);
+    const amt = parseFloat(swapAmt.replace(/,/g, "."));
     if (!amt || amt <= 0) { toast.error("Monto inválido."); return; }
 
     const inputToken = swapDir === "usdt_to_trx" ? "USDT" : "TRX";
@@ -1047,7 +1047,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
             VIEW: SWAP
         ════════════════════════════════════════ */}
         {view === "swap" && (() => {
-          const inputAmt    = parseFloat(swapAmt) || 0;
+          const inputAmt    = parseFloat(swapAmt.replace(/,/g, ".")) || 0;
           const inputToken  = swapDir === "usdt_to_trx" ? "USDT" : "TRX";
           const outputToken = swapDir === "usdt_to_trx" ? "TRX"  : "USDT";
           const trxUsd      = swapRate?.trxUsd || 0;

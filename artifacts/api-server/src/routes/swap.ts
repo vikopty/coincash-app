@@ -45,7 +45,7 @@ swapRouter.post("/swap/quote", async (req, res) => {
     res.status(400).json({ error: "direction must be usdt_to_trx or trx_to_usdt." });
     return;
   }
-  const amt = parseFloat(inputAmount);
+  const amt = parseFloat(String(inputAmount).replace(/,/g, "."));
   if (!amt || amt <= 0) {
     res.status(400).json({ error: "inputAmount must be a positive number." });
     return;
