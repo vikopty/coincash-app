@@ -218,29 +218,90 @@ export async function fetchTRXPrice(): Promise<number> {
   }
 }
 
-// ── Get TRX price via FF (more accurate, same source as quotes) ───────────────
-// Uses FF /price with a reference amount. Falls back to CoinGecko.
+// ── Helpers ───────────────────────────────────────────────────────────────────
+// Format a number for FF API: remove trailing zeros, never use comma notation.
+// e.g. 4.000000 → "4", 4.5 → "4.5", 0.123456 → "0.123456"
+function cleanAmount(n: number): string {
+  if (!isFinite(n) || n <= 0) throw new Error(`Monto inválido para la API: ${n}`);
+  return parseFloat(n.toFixed(8)).toString();
+}
+
+// Validate a FixedFloat currency code — must be a non-empty string
+function assertValidFFCurrency(code: string, label: string): void {
+  if (!code || typeof code !== "string" || code.trim().length === 0)
+    throw new Error(`Código de moneda inválido para ${label}: "${code}"`);
+}
+
+// ── Live TRX market rate (KuCoin → Kraken → CoinGecko → cached last known) ────
+// FF /price endpoint is geo-blocked from datacenter IPs; use public market APIs.
 let _ffRateCache: { trxUsd: number; trxPerUsdt: number; ts: number } | null = null;
+
+async function fetchRateFromKuCoin(): Promise<number> {
+  const res = await fetch(
+    "https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=TRX-USDT",
+    { signal: AbortSignal.timeout(8_000) }
+  );
+  if (!res.ok) throw new Error(`KuCoin ${res.status}`);
+  const j = await res.json() as any;
+  const p = parseFloat(j?.data?.price);
+  if (!p || p <= 0) throw new Error("KuCoin: no price");
+  return p;
+}
+
+async function fetchRateFromKraken(): Promise<number> {
+  const res = await fetch(
+    "https://api.kraken.com/0/public/Ticker?pair=TRXUSD",
+    { signal: AbortSignal.timeout(8_000) }
+  );
+  if (!res.ok) throw new Error(`Kraken ${res.status}`);
+  const j = await res.json() as any;
+  const ticker = Object.values(j?.result ?? {})[0] as any;
+  const p = parseFloat(ticker?.c?.[0]);
+  if (!p || p <= 0) throw new Error("Kraken: no price");
+  return p;
+}
 
 export async function fetchFFRate(): Promise<{ trxUsd: number; trxPerUsdt: number }> {
   if (_ffRateCache && Date.now() - _ffRateCache.ts < 15_000) {
     return { trxUsd: _ffRateCache.trxUsd, trxPerUsdt: _ffRateCache.trxPerUsdt };
   }
+
+  let trxUsd = 0;
+
+  // 1. KuCoin (most reliable, no geo-block on datacenter IPs)
   try {
-    // Reference amount: 10 USDT → TRX
-    const price = await ffGetPrice(FF_USDT, FF_TRX, "10", "float");
-    const trxPerUsdt = parseFloat(price.price);   // TRX per USDT
-    if (!trxPerUsdt || trxPerUsdt <= 0) throw new Error("FF returned zero rate");
-    const trxUsd = 1 / trxPerUsdt;  // USD per TRX
-    _ffRateCache = { trxUsd, trxPerUsdt, ts: Date.now() };
-    console.log(`[swap] FF rate: 1 USDT ≈ ${trxPerUsdt.toFixed(2)} TRX  ($${trxUsd.toFixed(4)})`);
-    return { trxUsd, trxPerUsdt };
-  } catch (err: any) {
-    console.warn("[swap] FF rate fetch failed, falling back to CoinGecko:", err?.message);
-    const trxUsd     = await fetchTRXPrice();
-    const trxPerUsdt = 1 / trxUsd;
-    return { trxUsd, trxPerUsdt };
+    trxUsd = await fetchRateFromKuCoin();
+    console.log(`[swap] KuCoin rate: 1 TRX = $${trxUsd.toFixed(5)}`);
+  } catch (e1: any) {
+    console.warn("[swap] KuCoin failed:", e1?.message);
+    // 2. Kraken
+    try {
+      trxUsd = await fetchRateFromKraken();
+      console.log(`[swap] Kraken rate: 1 TRX = $${trxUsd.toFixed(5)}`);
+    } catch (e2: any) {
+      console.warn("[swap] Kraken failed:", e2?.message);
+      // 3. CoinGecko
+      try {
+        trxUsd = await fetchTRXPrice();
+        console.log(`[swap] CoinGecko rate: 1 TRX = $${trxUsd.toFixed(5)}`);
+      } catch (e3: any) {
+        console.warn("[swap] CoinGecko failed:", e3?.message);
+      }
+    }
   }
+
+  // 4. Use cached last-known rate rather than fail completely
+  if (!trxUsd || trxUsd <= 0) {
+    if (_ffRateCache) {
+      console.warn("[swap] All price sources failed — using stale cache.");
+      return { trxUsd: _ffRateCache.trxUsd, trxPerUsdt: _ffRateCache.trxPerUsdt };
+    }
+    throw new Error("No se pudo obtener el precio de TRX.");
+  }
+
+  const trxPerUsdt = 1 / trxUsd;
+  _ffRateCache = { trxUsd, trxPerUsdt, ts: Date.now() };
+  return { trxUsd, trxPerUsdt };
 }
 
 // ── Quote types ───────────────────────────────────────────────────────────────
@@ -304,7 +365,7 @@ export async function createSwapQuote(
 
     // Ask FF what this swapAmount yields
     try {
-      const price   = await ffGetPrice(ffFrom, ffTo, swapAmount.toFixed(6), "float");
+      const price   = await ffGetPrice(ffFrom, ffTo, cleanAmount(swapAmount), "float");
       outputAmount  = parseFloat(price.estimated) || (swapAmount * trxPerUsdt);
     } catch {
       outputAmount  = swapAmount * trxPerUsdt * 0.99;  // conservative local estimate
@@ -323,7 +384,7 @@ export async function createSwapQuote(
     ffTo        = FF_USDT;
 
     try {
-      const price  = await ffGetPrice(ffFrom, ffTo, swapAmount.toFixed(6), "float");
+      const price  = await ffGetPrice(ffFrom, ffTo, cleanAmount(swapAmount), "float");
       outputAmount = parseFloat(price.estimated) || (swapAmount * trxUsd);
     } catch {
       outputAmount = swapAmount * trxUsd * 0.99;
@@ -348,7 +409,7 @@ export async function createSwapQuote(
     expiresAt: Date.now() + QUOTE_TTL_MS,
     ffFromCurrency: ffFrom,
     ffToCurrency:   ffTo,
-    ffSwapAmount:   swapAmount.toFixed(6),
+    ffSwapAmount:   cleanAmount(swapAmount),
   };
   _quotes.set(quoteId, quote);
   return quote;
@@ -379,8 +440,18 @@ export async function executeSwap(
   }
   _quotes.delete(quoteId); // one-time use
 
-  if (!userAddress || (!userAddress.startsWith("T") && !/^41[0-9a-fA-F]{40}$/.test(userAddress)))
-    throw new Error(`Dirección del usuario inválida: "${userAddress}"`);
+  // Validate user address — must be a valid TRON B58 or hex address
+  if (!userAddress || typeof userAddress !== "string" || userAddress.trim().length === 0)
+    throw new Error("Se requiere una dirección de destino válida (parámetro: address).");
+  if (!userAddress.startsWith("T") && !/^41[0-9a-fA-F]{40}$/.test(userAddress))
+    throw new Error(`Dirección del usuario inválida: "${userAddress}". Debe ser una dirección TRON válida.`);
+
+  // Validate FF currency codes
+  assertValidFFCurrency(quote.ffFromCurrency, "fromCurrency");
+  assertValidFFCurrency(quote.ffToCurrency,   "toCurrency");
+
+  // Clean the swap amount: strip trailing zeros, ensure numeric string (e.g. "4" not "4.000000")
+  const ffAmountStr = cleanAmount(quote.swapAmount);
 
   const userHex = tronB58ToHex(userAddress);
 
@@ -389,22 +460,23 @@ export async function executeSwap(
     Direction:  quote.direction,
     UserB58:    userAddress,
     SwapAmount: quote.swapAmount,
+    FFAmountStr: ffAmountStr,
     FFFrom:     quote.ffFromCurrency,
     FFTo:       quote.ffToCurrency,
   });
 
-  // 1. Create FixedFloat order BEFORE broadcasting user tx (get deposit address first)
-  //    FF sends output to user's wallet directly.
-  console.log("[swap] Creating FF order…");
+  // 1. Create swap order BEFORE broadcasting user tx (get deposit address first)
+  //    The swap provider delivers output tokens directly to user's wallet.
+  console.log("[swap] Creating swap order…");
   const ffOrder = await ffCreateOrder(
     quote.ffFromCurrency,
     quote.ffToCurrency,
-    quote.ffSwapAmount,
-    userAddress,   // FF delivers output here
+    ffAmountStr,
+    userAddress,   // swap provider delivers output here — required field
     "float",
   );
   if (!ffOrder.depositAddress)
-    throw new Error("FixedFloat no devolvió una dirección de depósito.");
+    throw new Error("El proveedor de swap no devolvió una dirección de depósito.");
 
   console.log("[swap] FF order created:", {
     id:      ffOrder.id,

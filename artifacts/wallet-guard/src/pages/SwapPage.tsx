@@ -336,7 +336,7 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                 ["Monto convertido",  quote?.inputToken === "USDT"
                     ? `${(quote?.swapAmount ?? 0).toFixed(2)} USDT`
                     : `${(quote?.swapAmount ?? 0).toFixed(4)} TRX`,                                                                 "white"],
-                ["Proveedor",         "FixedFloat (tasa float)",                                                                    "rgba(255,255,255,0.5)"],
+                ["Procesado por",      "CoinCash",                                                                                   "rgba(255,255,255,0.5)"],
                 ["Recibiste ✓",       `${result.outputAmount.toFixed(receiveToken === "USDT" ? 2 : 4)} ${receiveToken}`,            GREEN],
                 ["Tasa utilizada",    quote?.trxPerUsdt
                     ? `1 USDT ≈ ${quote.trxPerUsdt.toFixed(2)} TRX`
@@ -353,8 +353,8 @@ export default function SwapPage({ wallets, activeTab }: Props) {
             {/* TX IDs + FF Order ID */}
             {[
               { label: "TX de entrada",        value: result.inputTxId,    mono: true },
-              { label: "TX a FixedFloat",       value: result.relayTxId,    mono: true },
-              ...(result.ffOrderId ? [{ label: "Orden FixedFloat", value: result.ffOrderId, mono: false }] : []),
+              { label: "TX de salida",           value: result.relayTxId,    mono: true },
+              ...(result.ffOrderId ? [{ label: "ID de orden",      value: result.ffOrderId, mono: false }] : []),
             ].map(({ label, value, mono }) => (
                 <div key={label} className="w-full rounded-2xl p-3.5" style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
                   <div className="flex items-center justify-between mb-1.5">
@@ -440,7 +440,7 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                 ["Monto a convertir",  quote.inputToken === "USDT"
                     ? `${quote.swapAmount.toFixed(2)} USDT`
                     : `${quote.swapAmount.toFixed(4)} TRX`,                                                                        "white"],
-                ["Proveedor",          "FixedFloat (tasa float)",                                                                   "rgba(255,255,255,0.5)"],
+                ["Procesado por",       "Swap procesado por CoinCash",                                                               "rgba(255,255,255,0.5)"],
                 ["Recibirás ≈",        `${quote.outputAmount.toFixed(quote.outputToken === "USDT" ? 2 : 4)} ${quote.outputToken}`,  GREEN],
                 ["Tarifa de red",      "Cubierta por CoinCash ✓",                                                                   GREEN],
               ].map(([lbl, val, col], i, arr) => (
@@ -724,8 +724,8 @@ export default function SwapPage({ wallets, activeTab }: Props) {
                       color: "rgba(255,255,255,0.4)",
                     },
                     {
-                      label: "Proveedor",
-                      value: "FixedFloat · tasa float",
+                      label: "Procesado por",
+                      value: "Swap procesado por CoinCash",
                       color: "rgba(255,255,255,0.35)",
                     },
                   ].map(({ label, value, color }, i, arr) => (
@@ -772,10 +772,10 @@ export default function SwapPage({ wallets, activeTab }: Props) {
               }
             </button>
 
-            {/* FixedFloat attribution + disclaimer */}
+            {/* CoinCash disclaimer */}
             <p className="text-center text-[10px] leading-relaxed pb-1"
               style={{ color: "rgba(255,255,255,0.18)" }}>
-              Swap ejecutado por&nbsp;<span style={{ color: "rgba(255,255,255,0.32)" }}>FixedFloat</span>&nbsp;·&nbsp;Las operaciones son irreversibles en TRON.
+              Swap procesado por&nbsp;<span style={{ color: "rgba(255,255,255,0.32)" }}>CoinCash</span>&nbsp;·&nbsp;Las operaciones son irreversibles en TRON.
             </p>
           </div>
         )}

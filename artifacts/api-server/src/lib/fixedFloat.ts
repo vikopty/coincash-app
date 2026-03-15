@@ -124,6 +124,15 @@ export async function ffCreateOrder(
 ): Promise<FFOrderResult> {
   if (!isFFConfigured()) throw new Error("FixedFloat no configurado.");
 
+  // Validate required fields before calling the API
+  if (!address || typeof address !== "string" || address.trim().length === 0)
+    throw new Error("Se requiere la dirección de destino (address) para crear la orden de swap.");
+  if (!from || !to)
+    throw new Error("Se requieren los símbolos de moneda de origen y destino.");
+  const numAmount = parseFloat(amount);
+  if (!amount || isNaN(numAmount) || numAmount <= 0)
+    throw new Error(`Monto inválido para la orden de swap: "${amount}". Debe ser un número mayor a cero.`);
+
   const body = JSON.stringify({ from, to, amount, address, type });
   const res  = await fetch(`${FF_BASE}/create`, {
     method:  "POST",
