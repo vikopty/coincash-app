@@ -12,9 +12,7 @@ import {
   fetchAccountInfo, fetchAllTransactions,
   sendTRX, sendUSDT, relayUSDTTransfer, fetchRelayStatus,
   estimateUSDTTransferFee, SERVICE_FEE_USDT,
-  fetchSwapRate, getSwapQuote, executeSwap,
   type AccountInfo, type TxRecord, type RelayResult, type FeeEstimate, type FeeMode, type RelayStatus,
-  type SwapDirection, type SwapQuote, type SwapResult, type SwapRate,
 } from "@/lib/tronApi";
 import { decryptPrivateKey, hasEncryptedKey } from "@/lib/security";
 import type { SavedWallet } from "@/pages/WalletsPage";
@@ -32,15 +30,15 @@ const AMBER  = "#F59E0B";
 const TEAL   = "#2DD4BF";
 const BORDER = "rgba(255,255,255,0.06)";
 
-type View = "overview" | "receive" | "send" | "history" | "swap";
+type View = "overview" | "receive" | "send" | "history";
 type SendStep = "form" | "confirm" | "signing" | "done";
-type SwapStep = "form" | "confirm" | "signing" | "done";
 type Token = "TRX" | "USDT";
 
 interface Props {
   wallet: SavedWallet;
   onClose: () => void;
   onRename?: (name: string) => void;
+  onNavigateSwap?: () => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -91,7 +89,7 @@ function writeCache(addr: string, info: AccountInfo, txs: TxRecord[]) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) {
+export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigateSwap }: Props) {
   const [view, setView]           = useState<View>("overview");
   const [info, setInfo]           = useState<AccountInfo | null>(null);
   const [txs, setTxs]             = useState<TxRecord[]>([]);
@@ -135,17 +133,6 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
   // Fee abstraction state (USDT transfers only)
   const [feeEstimate, setFeeEstimate]   = useState<FeeEstimate | null>(null);
   const [feeLoading, setFeeLoading]     = useState(false);
-
-  // ── Swap state ─────────────────────────────────────────────────────────────
-  const [swapStep, setSwapStep]       = useState<SwapStep>("form");
-  const [swapDir, setSwapDir]         = useState<SwapDirection>("usdt_to_trx");
-  const [swapAmt, setSwapAmt]         = useState("");
-  const [swapRate, setSwapRate]       = useState<SwapRate | null>(null);
-  const [swapRateLoading, setSwapRateLoading] = useState(false);
-  const [swapQuote, setSwapQuote]     = useState<SwapQuote | null>(null);
-  const [swapQuoteLoading, setSwapQuoteLoading] = useState(false);
-  const [swapResult, setSwapResult]   = useState<SwapResult | null>(null);
-  const [swapLoading, setSwapLoading] = useState(false);
 
   const canSend = wallet.type !== "watch" && hasEncryptedKey(wallet.id);
 
@@ -260,21 +247,6 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
       .catch(() => { if (!cancelled) setFeeLoading(false); });
     return () => { cancelled = true; };
   }, [view, sendToken, wallet.address, relayActive]);
-
-  // ── Fetch swap rate when swap view opens; refresh every 30 s ───────────────
-  useEffect(() => {
-    if (view !== "swap") return;
-    let cancelled = false;
-    const load = () => {
-      setSwapRateLoading(true);
-      fetchSwapRate()
-        .then(r => { if (!cancelled) { setSwapRate(r); setSwapRateLoading(false); } })
-        .catch(() => { if (!cancelled) setSwapRateLoading(false); });
-    };
-    load();
-    const id = setInterval(load, 30_000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [view]);
 
   // ── Risk analysis — triggers automatically when transactions are loaded ─────
   // Refreshes the risk map from cache, then queues analyses for any incoming
@@ -400,66 +372,10 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
     setSentSponsored(false); setSentFeeMode("burn");
   };
 
-  // ── Swap logic ──────────────────────────────────────────────────────────────
-  const resetSwap = () => {
-    setSwapStep("form"); setSwapAmt(""); setSwapQuote(null); setSwapResult(null);
-  };
-
-  // Called when user taps "Continuar" on the swap form:
-  // fetches a server-side quote (one-time use) and moves to confirm step.
-  const handleSwapContinue = async () => {
-    const amt = parseFloat(swapAmt.replace(/,/g, "."));
-    if (!amt || amt <= 0) { toast.error("Monto inválido."); return; }
-
-    const inputToken = swapDir === "usdt_to_trx" ? "USDT" : "TRX";
-    const balance = inputToken === "USDT" ? (info?.usdtBalance ?? 0) : (info?.trxBalance ?? 0);
-    const minReserve = inputToken === "TRX" ? 2 : 0; // keep 2 TRX for network fees
-    if (amt + minReserve > balance) {
-      toast.error(`Saldo insuficiente. Disponible: ${balance.toFixed(inputToken === "USDT" ? 2 : 4)} ${inputToken}.`);
-      return;
-    }
-    if (!swapRate?.swapAvailable) {
-      toast.error("El servicio de swap no está disponible en este momento.");
-      return;
-    }
-
-    setSwapQuoteLoading(true);
-    try {
-      const quote = await getSwapQuote(swapDir, amt);
-      setSwapQuote(quote);
-      setSwapStep("confirm");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Error al obtener cotización.");
-    } finally {
-      setSwapQuoteLoading(false);
-    }
-  };
-
-  // Called when user confirms the swap:
-  const executeSwapTx = async () => {
-    if (!swapQuote) return;
-    setSwapLoading(true);
-    setSwapStep("signing");
-    try {
-      const privKey = await decryptPrivateKey(wallet.id);
-      const result = await executeSwap(wallet.address, privKey, swapQuote);
-      setSwapResult(result);
-      setSwapStep("done");
-      toast.success("Swap completado exitosamente.");
-      setTimeout(() => loadWalletData(), 4_000);
-    } catch (e: any) {
-      toast.error(e?.message ?? "Error al ejecutar el swap.");
-      setSwapStep("confirm");
-    } finally {
-      setSwapLoading(false);
-    }
-  };
-
   // ── Back navigation ────────────────────────────────────────────────────────
   const goBack = () => {
     setView("overview");
     resetSend();
-    resetSwap();
   };
 
   const badgeLabel = wallet.type === "created" ? "Creada"
@@ -629,9 +545,9 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
                 </div>
               )}
             </div>
-            {/* Swap button — full width second row */}
+            {/* Swap button — navigates to the main Swap tab */}
             {canSend ? (
-              <button onClick={() => { resetSwap(); setView("swap"); }}
+              <button onClick={() => { onNavigateSwap?.(); onClose(); }}
                 className="w-full flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold mb-6"
                 style={{ background: `${PURPLE}22`, color: PURPLE, border: `1px solid ${PURPLE}40` }}>
                 <ArrowLeftRight className="h-4 w-4" /> Swap USDT ↔ TRX
@@ -1042,255 +958,6 @@ export default function WalletDetailSheet({ wallet, onClose, onRename }: Props) 
             )}
           </div>
         )}
-
-        {/* ════════════════════════════════════════
-            VIEW: SWAP
-        ════════════════════════════════════════ */}
-        {view === "swap" && (() => {
-          const inputAmt    = parseFloat(swapAmt.replace(/,/g, ".")) || 0;
-          const inputToken  = swapDir === "usdt_to_trx" ? "USDT" : "TRX";
-          const outputToken = swapDir === "usdt_to_trx" ? "TRX"  : "USDT";
-          const trxUsd      = swapRate?.trxUsd || 0;
-          const grossOut    = swapDir === "usdt_to_trx"
-            ? (trxUsd > 0 ? inputAmt / trxUsd : 0)
-            : inputAmt * trxUsd;
-          const feeAmt      = grossOut * 0.02;
-          const netOut      = grossOut * 0.98;
-          const hasAmt      = inputAmt > 0 && trxUsd > 0;
-
-          return (
-            <div className="px-5 pb-10">
-
-              {/* Done step */}
-              {swapStep === "done" && swapResult && (
-                <div className="flex flex-col items-center py-8 text-center gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full"
-                    style={{ background: `${PURPLE}20`, border: `2px solid ${PURPLE}40` }}>
-                    <ArrowLeftRight className="h-8 w-8" style={{ color: PURPLE }} />
-                  </div>
-                  <div>
-                    <p className="text-lg font-bold text-white mb-1">¡Swap completado!</p>
-                    <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
-                      Los tokens han sido enviados a tu billetera.
-                    </p>
-                  </div>
-
-                  <div className="w-full rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
-                    {[
-                      ["Enviaste",    `${swapResult.inputTxId ? swapQuote?.inputAmount.toFixed(swapDir === "usdt_to_trx" ? 2 : 4) : "—"} ${inputToken}`,   "white"],
-                      ["Recibiste",   `${swapResult.outputAmount.toFixed(swapDir === "usdt_to_trx" ? 4 : 2)} ${outputToken}`,  GREEN],
-                      ["Tarifa (2%)", `${swapResult.feeAmount.toFixed(swapDir === "usdt_to_trx" ? 4 : 2)} ${outputToken}`,    AMBER],
-                      ["Tasa usada",  trxUsd > 0 ? `1 TRX ≈ $${swapQuote?.trxUsd.toFixed(4)} USD` : "—",                    "white"],
-                    ].map(([label, value, color], i, arr) => (
-                      <div key={label} className="flex items-center justify-between px-4 py-2.5"
-                        style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-                        <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</span>
-                        <span className="text-[10px] font-bold" style={{ color }}>{value}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="w-full rounded-2xl p-3" style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}` }}>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: "rgba(255,255,255,0.3)" }}>TX entrada</p>
-                    <p className="text-[10px] font-mono break-all" style={{ color: "rgba(255,255,255,0.6)" }}>{swapResult.inputTxId}</p>
-                  </div>
-                  <div className="w-full rounded-2xl p-3" style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}` }}>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: "rgba(255,255,255,0.3)" }}>TX salida</p>
-                    <p className="text-[10px] font-mono break-all" style={{ color: "rgba(255,255,255,0.6)" }}>{swapResult.outputTxId}</p>
-                  </div>
-
-                  <button onClick={() => { resetSwap(); setView("overview"); }}
-                    className="w-full rounded-2xl py-3.5 text-sm font-bold mt-2"
-                    style={{ background: PURPLE, color: "white" }}>
-                    Volver al inicio
-                  </button>
-                </div>
-              )}
-
-              {/* Signing step */}
-              {swapStep === "signing" && (
-                <div className="flex flex-col items-center py-12 gap-4">
-                  <Loader2 className="h-10 w-10 animate-spin" style={{ color: PURPLE }} />
-                  <p className="text-sm font-semibold text-white">Ejecutando swap…</p>
-                  <p className="text-xs text-center max-w-[220px] leading-relaxed" style={{ color: "rgba(255,255,255,0.4)" }}>
-                    Firmando tu pago y enviando tus tokens — no cierres la app
-                  </p>
-                </div>
-              )}
-
-              {/* Confirm step */}
-              {swapStep === "confirm" && swapQuote && (
-                <>
-                  <p className="text-base font-bold text-white mb-4">Confirmar Swap</p>
-                  <div className="rounded-2xl overflow-hidden mb-5" style={{ border: `1px solid ${BORDER}`, background: CARD }}>
-                    {[
-                      ["Envías",           `${swapQuote.inputAmount.toFixed(swapQuote.inputToken === "USDT" ? 2 : 4)} ${swapQuote.inputToken}`,   "white"],
-                      ["Recibirás ≈",      `${swapQuote.outputAmount.toFixed(swapQuote.outputToken === "USDT" ? 2 : 4)} ${swapQuote.outputToken}`, GREEN],
-                      ["Tarifa CoinCash (2%)", `${swapQuote.feeAmount.toFixed(swapQuote.outputToken === "USDT" ? 2 : 4)} ${swapQuote.outputToken}`, AMBER],
-                      ["Tasa de cambio",   `1 TRX ≈ $${swapQuote.trxUsd.toFixed(4)} USD`,                                                         "white"],
-                    ].map(([label, value, color], i, arr) => (
-                      <div key={label} className="flex items-start justify-between px-4 py-3"
-                        style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
-                        <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</span>
-                        <span className="text-xs font-semibold text-right" style={{ color }}>{value}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Quote expiry warning */}
-                  <div className="rounded-2xl p-3 mb-5 flex gap-2.5"
-                    style={{ background: `${AMBER}0A`, border: `1px solid ${AMBER}25` }}>
-                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" style={{ color: AMBER }} />
-                    <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
-                      Esta cotización expira en <span className="font-semibold" style={{ color: AMBER }}>60 segundos</span>. Las transacciones en blockchain son <span className="font-semibold" style={{ color: DANGER }}>irreversibles</span>.
-                    </p>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <button onClick={() => { setSwapStep("form"); setSwapQuote(null); }}
-                      className="flex-1 rounded-2xl py-3.5 text-sm font-medium"
-                      style={{ border: `1px solid ${BORDER}`, color: "rgba(255,255,255,0.5)" }}>
-                      Cancelar
-                    </button>
-                    <button onClick={executeSwapTx} disabled={swapLoading}
-                      className="flex-1 rounded-2xl py-3.5 text-sm font-bold"
-                      style={{ background: PURPLE, color: "white", boxShadow: `0 0 18px ${PURPLE}40` }}>
-                      Confirmar Swap
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {/* Form step */}
-              {swapStep === "form" && (
-                <>
-                  <p className="text-base font-bold text-white mb-4">Swap</p>
-
-                  {/* Direction selector */}
-                  <div className="flex gap-1 rounded-2xl p-1 mb-4"
-                    style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}` }}>
-                    {(["usdt_to_trx", "trx_to_usdt"] as SwapDirection[]).map(d => (
-                      <button key={d} onClick={() => { setSwapDir(d); setSwapAmt(""); }}
-                        className="flex-1 rounded-xl py-2.5 text-xs font-bold transition-all"
-                        style={{
-                          background: swapDir === d ? PURPLE : "transparent",
-                          color: swapDir === d ? "white" : "rgba(255,255,255,0.4)",
-                        }}>
-                        {d === "usdt_to_trx" ? "USDT → TRX" : "TRX → USDT"}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Swap unavailable banner */}
-                  {swapRate && !swapRate.swapAvailable && (
-                    <div className="rounded-2xl p-3 mb-4 flex gap-2.5"
-                      style={{ background: `${AMBER}0C`, border: `1px solid ${AMBER}30` }}>
-                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: AMBER }} />
-                      <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
-                        El servicio de swap no está disponible en este momento. El relayer no está configurado.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Available balance + MAX */}
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.4)" }}>
-                      Disponible
-                    </p>
-                    <button onClick={() => {
-                      const b = inputToken === "USDT" ? (info?.usdtBalance ?? 0) : (info?.trxBalance ?? 0);
-                      const max = inputToken === "TRX" ? Math.max(0, b - 2) : b;
-                      setSwapAmt(max > 0 ? fmtAmt(max, inputToken === "USDT" ? 2 : 4) : "0");
-                    }} className="text-[11px] font-semibold px-2 py-0.5 rounded-lg"
-                      style={{ background: `${PURPLE}18`, color: PURPLE }}>
-                      {inputToken === "USDT"
-                        ? `${fmtAmt(info?.usdtBalance ?? 0, 2)} USDT`
-                        : `${fmtAmt(info?.trxBalance ?? 0, 4)} TRX`
-                      } · MAX
-                    </button>
-                  </div>
-
-                  {/* Amount input */}
-                  <div className="relative mb-4">
-                    <input
-                      type="number" placeholder="0.00"
-                      value={swapAmt} onChange={e => setSwapAmt(e.target.value)}
-                      className="w-full rounded-2xl px-4 py-4 text-2xl font-bold text-white outline-none text-center"
-                      style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}` }}
-                    />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold"
-                      style={{ color: "rgba(255,255,255,0.3)" }}>{inputToken}</span>
-                  </div>
-
-                  {/* Real-time estimate card */}
-                  <div className="rounded-2xl overflow-hidden mb-4" style={{ border: `1px solid ${BORDER}`, background: CARD }}>
-                    {/* Rate header */}
-                    <div className="flex items-center justify-between px-4 py-3"
-                      style={{ borderBottom: `1px solid ${BORDER}`, background: `${PURPLE}08` }}>
-                      <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: PURPLE }}>
-                        Tasa de cambio
-                      </span>
-                      {swapRateLoading ? (
-                        <Loader2 className="h-3 w-3 animate-spin" style={{ color: PURPLE }} />
-                      ) : trxUsd > 0 ? (
-                        <span className="text-[11px] font-bold" style={{ color: PURPLE }}>
-                          1 TRX ≈ ${trxUsd.toFixed(4)} USD
-                        </span>
-                      ) : (
-                        <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.25)" }}>—</span>
-                      )}
-                    </div>
-
-                    {/* Envías */}
-                    <div className="flex items-center justify-between px-4 py-3"
-                      style={{ borderBottom: `1px solid ${BORDER}` }}>
-                      <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>Envías</span>
-                      <span className="text-[11px] font-bold text-white">
-                        {hasAmt ? `${inputAmt.toFixed(inputToken === "USDT" ? 2 : 4)} ${inputToken}` : "—"}
-                      </span>
-                    </div>
-
-                    {/* Recibirás */}
-                    <div className="flex items-center justify-between px-4 py-3"
-                      style={{ borderBottom: `1px solid ${BORDER}` }}>
-                      <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>Recibirás ≈</span>
-                      <span className="text-[11px] font-bold" style={{ color: GREEN }}>
-                        {hasAmt ? `${netOut.toFixed(outputToken === "USDT" ? 2 : 4)} ${outputToken}` : "—"}
-                      </span>
-                    </div>
-
-                    {/* Tarifa */}
-                    <div className="flex items-center justify-between px-4 py-3"
-                      style={{ borderBottom: `1px solid ${BORDER}` }}>
-                      <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>Tarifa CoinCash (2%)</span>
-                      <span className="text-[11px] font-bold" style={{ color: AMBER }}>
-                        {hasAmt ? `${feeAmt.toFixed(outputToken === "USDT" ? 2 : 4)} ${outputToken}` : "—"}
-                      </span>
-                    </div>
-
-                    {/* Network fee */}
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>Tarifa de red</span>
-                      <span className="text-[11px] font-bold" style={{ color: GREEN }}>Cubierta por CoinCash ✓</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleSwapContinue}
-                    disabled={swapQuoteLoading || !hasAmt || !swapRate?.swapAvailable}
-                    className="w-full rounded-2xl py-3.5 text-sm font-bold disabled:opacity-40"
-                    style={{ background: PURPLE, color: "white", boxShadow: hasAmt ? `0 0 18px ${PURPLE}40` : "none" }}>
-                    {swapQuoteLoading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" /> Obteniendo cotización…
-                      </span>
-                    ) : "Continuar"}
-                  </button>
-                </>
-              )}
-            </div>
-          );
-        })()}
 
         {/* ════════════════════════════════════════
             VIEW: HISTORY

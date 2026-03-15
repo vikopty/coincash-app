@@ -79,7 +79,7 @@ function MainApp() {
           />
         </div>
         <div style={{ display: tab === "wallets"     ? "block" : "none" }}>
-          <WalletsPage onScan={handleScanWallet} activeTab={tab} />
+          <WalletsPage onScan={handleScanWallet} activeTab={tab} onNavigateSwap={() => setTab("swap")} />
         </div>
         <div style={{ display: tab === "swap"        ? "block" : "none" }}>
           <SwapPage wallets={wallets} activeTab={tab} />

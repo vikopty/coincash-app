@@ -41,7 +41,7 @@ const typeBadge   = (t: SavedWallet["type"]) =>
 type ModalType = "watch" | "import" | "create" | null;
 type ImportTab  = "phrase" | "privkey" | "keystore";
 
-interface Props { onScan: (address: string) => void; activeTab?: string }
+interface Props { onScan: (address: string) => void; activeTab?: string; onNavigateSwap?: () => void }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 function BottomSheet({ onClose, children }: { onClose:()=>void; children: React.ReactNode }) {
@@ -118,7 +118,7 @@ function ActionBtn({ label, color, onClick, disabled=false }:
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function WalletsPage({ onScan, activeTab }: Props) {
+export default function WalletsPage({ onScan, activeTab, onNavigateSwap }: Props) {
   const [wallets, setWallets]     = useState<SavedWallet[]>(loadWallets);
   const [modal, setModal]         = useState<ModalType>(null);
   const [name, setName]           = useState("");
@@ -247,6 +247,7 @@ export default function WalletsPage({ onScan, activeTab }: Props) {
         wallet={detailWallet}
         onClose={() => setDetailWallet(null)}
         onRename={name => renameWallet(detailWallet.id, name)}
+        onNavigateSwap={onNavigateSwap}
       />
     );
   }
