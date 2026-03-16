@@ -152,9 +152,10 @@ const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) =>
       <div
         style={{
           position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
+          bottom: "70px",
+          left: "10px",
+          right: "10px",
+          borderRadius: "12px",
           zIndex: 999,
           padding: "12px",
           background: "#7a0000",
