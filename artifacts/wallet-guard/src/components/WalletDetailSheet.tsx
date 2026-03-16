@@ -782,14 +782,12 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                     ? [
                         ["Token", "TRX", "white"],
                         ["Monto", `${sendAmt} TRX`, "white"],
-                        ["Tarifa de red", "~1 TRX (bandwidth)", AMBER],
                         ["Desde", short(wallet.address), "white"],
                         ["Hacia", short(sendTo), "white"],
                       ]
                     : [
                         ["Monto a enviar",     `${parseFloat(sendAmt).toFixed(2)} USDT`,                 "white"],
                         ["Tarifa CoinCash",    `${SERVICE_FEE_USDT.toFixed(2)} USDT`,                     AMBER],
-                        ["Tarifa de red",      "",                                                       GREEN],
                         ["Total",              `${(parseFloat(sendAmt) + SERVICE_FEE_USDT).toFixed(2)} USDT`, BLUE],
                         ["Destinatario recibe", `${parseFloat(sendAmt).toFixed(2)} USDT`,                GREEN],
                         ["Hacia",              short(sendTo),                                            "white"],
@@ -937,17 +935,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                       </span>
                     </div>
 
-                    {/* Row 3: Network fee — always covered by CoinCash */}
-                    <div className="flex items-center justify-between px-4 py-3"
-                      style={{ borderBottom: `1px solid ${BORDER}` }}>
-                      <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
-                        Tarifa de red
-                      </span>
-                      <span className="text-[11px] font-bold" style={{ color: GREEN }}>
-                      </span>
-                    </div>
-
-                    {/* Row 4: Total = amount + service fee */}
+                    {/* Row 3: Total = amount + service fee */}
                     <div className="flex items-center justify-between px-4 py-3"
                       style={{ background: `${BLUE}0A` }}>
                       <span className="text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.6)" }}>
