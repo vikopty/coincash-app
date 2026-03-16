@@ -152,17 +152,18 @@ const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) =>
       <div
         style={{
           position: "fixed",
-          bottom: "70px",
-          left: "10px",
-          right: "10px",
-          borderRadius: "12px",
+          bottom: "75px",
+          left: "12px",
+          right: "12px",
+          borderRadius: "10px",
           zIndex: 999,
-          padding: "12px",
-          background: "#7a0000",
+          padding: "10px",
+          background: "#a00000",
           color: "#fff",
-          fontSize: "12px",
-          borderTop: "1px solid rgba(255,255,255,0.2)",
-          lineHeight: "1.5",
+          fontSize: "11px",
+          lineHeight: "1.3",
+          maxHeight: "80px",
+          overflow: "hidden",
         }}
       >
         <span style={{ fontWeight: 700 }}>⚠ Aviso Legal&nbsp;&nbsp;</span>
