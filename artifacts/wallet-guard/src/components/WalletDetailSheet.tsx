@@ -766,7 +766,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                 </p>
                 <p className="text-xs text-center max-w-[220px] leading-relaxed" style={{ color: "rgba(255,255,255,0.4)" }}>
                   {sendToken === "USDT"
-                    ? "CoinCash recolecta la tarifa de servicio y cubre la tarifa de red"
+                    ? "Procesando transacción en la red TRON"
                     : "No cierres la app"}
                 </p>
               </div>
