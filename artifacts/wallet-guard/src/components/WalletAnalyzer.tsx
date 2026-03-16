@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { ScanSearch, Loader2, QrCode, X, CheckCircle2, AlertTriangle, ShieldAlert } from "lucide-react";
-import { motion } from "framer-motion";
+import { ScanSearch, Loader2, QrCode, X, CheckCircle2, AlertTriangle, ShieldAlert,
+         Copy, CheckCheck, Activity, Zap, Hash, Shield } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import TronAnalysisReport from "@/components/TronAnalysisReport";
 import ScanningAnimation from "@/components/ScanningAnimation";
 import QRScannerDialog from "@/components/QRScannerDialog";
@@ -10,6 +11,7 @@ const GREEN  = "#19C37D";
 const AMBER  = "#F59E0B";
 const ORANGE = "#FF6B35";
 const DANGER = "#FF4D4F";
+const BLUE   = "#3B82F6";
 const CARD   = "#121821";
 const BORDER = "rgba(255,255,255,0.07)";
 
@@ -40,6 +42,13 @@ function getRiskStatusConfig(score: number): { msg: string; color: string; Icon:
   if (score >= 60) return { msg: "Riesgos detectados",           color: ORANGE,  Icon: ShieldAlert    };
   if (score >= 30) return { msg: "Actividad moderada detectada", color: AMBER,   Icon: AlertTriangle  };
   return            { msg: "No se detectaron riesgos",           color: GREEN,   Icon: CheckCircle2   };
+}
+
+function getScoreCardConfig(score: number): { label: string; color: string; bg: string } {
+  if (score >= 80) return { label: "Riesgo severo",    color: DANGER,  bg: "linear-gradient(135deg,#200808 0%,#120404 100%)" };
+  if (score >= 60) return { label: "Riesgo detectado", color: ORANGE,  bg: "linear-gradient(135deg,#1E0E04 0%,#120804 100%)" };
+  if (score >= 30) return { label: "Riesgo moderado",  color: AMBER,   bg: "linear-gradient(135deg,#1A1000 0%,#0F0A00 100%)" };
+  return             { label: "Bajo riesgo",           color: GREEN,   bg: "linear-gradient(135deg,#001A0E 0%,#000F08 100%)" };
 }
 
 // Daily stats helpers (localStorage)
@@ -198,6 +207,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [dailyStats, setDailyStats] = useState<DailyStats>(() => getDailyStats());
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
+  const [copiedAddress, setCopiedAddress] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
 
   // Sync daily stats from localStorage on mount
@@ -570,17 +580,28 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     handleAnalyze(undefined, result);
   };
 
+  const handleCopyAddress = (addr: string) => {
+    navigator.clipboard.writeText(addr).then(() => {
+      setCopiedAddress(true);
+      setTimeout(() => setCopiedAddress(false), 2000);
+    });
+  };
+
   return (
     <div className="flex flex-col w-full px-4 mx-auto" style={{ maxWidth: "640px" }}>
 
       {/* ── Input card ── */}
       <div className="rounded-2xl p-4 mb-4"
-        style={{ background: CARD, border: `1px solid ${BORDER}`, boxShadow: "0 4px 24px rgba(0,0,0,0.45)" }}>
+        style={{
+          background: "linear-gradient(160deg,#141A24 0%,#0D1117 100%)",
+          border: `1px solid ${BORDER}`,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+        }}>
 
         {/* Address input row */}
         <div className="relative flex items-center mb-3">
-          <ScanSearch className="absolute left-3.5 h-4.5 w-4.5 pointer-events-none"
-            style={{ color: "rgba(255,255,255,0.3)", width: 18, height: 18 }} />
+          <ScanSearch className="absolute left-3.5 pointer-events-none"
+            style={{ color: "rgba(255,255,255,0.3)", width: 17, height: 17 }} />
           <input
             value={address}
             onChange={e => setAddress(e.target.value)}
@@ -589,9 +610,10 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
             className="w-full rounded-xl text-sm text-white outline-none font-mono"
             style={{
               background: "rgba(255,255,255,0.04)",
-              border: `1px solid ${address ? GREEN + "50" : BORDER}`,
-              padding: "12px 40px 12px 40px",
+              border: `1px solid ${address ? BLUE + "60" : BORDER}`,
+              padding: "12px 36px 12px 38px",
               transition: "border-color 0.2s",
+              letterSpacing: "0.02em",
             }}
           />
           {address && (
@@ -603,25 +625,20 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
           )}
         </div>
 
-        {/* Action buttons */}
-        <div className="flex gap-2.5">
-          <button
-            type="button"
-            onClick={() => setIsScannerOpen(true)}
-            disabled={isAnalyzing}
-            className="flex items-center justify-center gap-2 rounded-xl py-3 px-4 text-sm font-medium transition-opacity active:opacity-70"
-            style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}`, color: "rgba(255,255,255,0.6)", flex: "0 0 auto" }}>
-            <QrCode style={{ width: 16, height: 16 }} />
-            <span>Escanear QR</span>
-          </button>
-
+        {/* Action buttons — stacked */}
+        <div className="flex flex-col gap-2.5">
           <button
             id="wg-analyze-btn"
             type="button"
             onClick={() => handleAnalyze()}
             disabled={isAnalyzing}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl py-3 px-4 text-sm font-bold text-black transition-opacity active:opacity-80"
-            style={{ background: GREEN, boxShadow: isAnalyzing ? "none" : `0 0 18px ${GREEN}44` }}>
+            className="flex w-full items-center justify-center gap-2 rounded-xl py-3.5 px-4 text-sm font-bold text-white transition-opacity active:opacity-80"
+            style={{
+              background: isAnalyzing
+                ? "rgba(59,130,246,0.4)"
+                : "linear-gradient(135deg,#2563EB 0%,#1D4ED8 100%)",
+              boxShadow: isAnalyzing ? "none" : "0 0 20px rgba(59,130,246,0.35)",
+            }}>
             {isAnalyzing ? (
               <>
                 <Loader2 style={{ width: 16, height: 16 }} className="animate-spin" />
@@ -630,9 +647,23 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
             ) : (
               <>
                 <ScanSearch style={{ width: 16, height: 16 }} />
-                <span>Analizar dirección</span>
+                <span>Analizar Wallet</span>
               </>
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsScannerOpen(true)}
+            disabled={isAnalyzing}
+            className="flex w-full items-center justify-center gap-2 rounded-xl py-3.5 px-4 text-sm font-semibold transition-opacity active:opacity-70"
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: `1px solid ${BORDER}`,
+              color: "rgba(255,255,255,0.65)",
+            }}>
+            <QrCode style={{ width: 16, height: 16 }} />
+            <span>Scan QR</span>
           </button>
         </div>
       </div>
@@ -642,27 +673,167 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
         {isAnalyzing ? (
           <ScanningAnimation isAnalyzing={isAnalyzing} waitingMessage={rateLimitMessage} />
         ) : showReport && reportData ? (
-          <>
-            {(() => {
-              const score = computeRiskScore(reportData);
-              const { msg, color, Icon } = getRiskStatusConfig(score);
-              return (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35 }}
-                  className="mb-4 flex items-start gap-3 rounded-2xl px-4 py-3.5"
-                  style={{ background: `${color}12`, border: `1px solid ${color}35` }}
-                >
-                  <Icon className="mt-0.5 h-5 w-5 shrink-0" style={{ color }} />
-                  <p className="text-sm leading-snug" style={{ color: "rgba(255,255,255,0.8)" }}>
-                    <span className="font-semibold text-white">Análisis completado</span> — {msg}.
-                  </p>
-                </motion.div>
-              );
-            })()}
-            <TronAnalysisReport reportData={reportData} />
-          </>
+          <AnimatePresence>
+            <motion.div
+              key="results"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+            >
+              {/* ── Premium Risk Score Card ── */}
+              {(() => {
+                const score = computeRiskScore(reportData);
+                const { label, color, bg } = getScoreCardConfig(score);
+                return (
+                  <div className="rounded-3xl p-6 mb-4"
+                    style={{
+                      background: bg,
+                      border: `1px solid ${color}30`,
+                      boxShadow: `0 8px 40px ${color}18`,
+                    }}>
+
+                    {/* Shield + score centred */}
+                    <div className="flex flex-col items-center text-center mb-5">
+                      {/* Icon container */}
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl mb-4"
+                        style={{
+                          background: `${color}18`,
+                          border: `1px solid ${color}40`,
+                          boxShadow: `0 0 24px ${color}22`,
+                        }}>
+                        <Shield style={{ color, width: 26, height: 26 }} />
+                      </div>
+
+                      {/* Label */}
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-2.5"
+                        style={{ color: "rgba(255,255,255,0.38)" }}>
+                        RISK SCORE
+                      </p>
+
+                      {/* Big number */}
+                      <div className="flex items-end leading-none mb-4">
+                        <span className="font-black" style={{ fontSize: 72, color, lineHeight: 1 }}>
+                          {score}
+                        </span>
+                        <span className="font-bold mb-1 ml-0.5" style={{ fontSize: 24, color: "rgba(255,255,255,0.28)" }}>
+                          /100
+                        </span>
+                      </div>
+
+                      {/* Badge */}
+                      <span className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-bold"
+                        style={{
+                          background: `${color}1A`,
+                          border: `1px solid ${color}50`,
+                          color,
+                          letterSpacing: "0.01em",
+                        }}>
+                        {label}
+                      </span>
+                    </div>
+
+                    {/* Divider */}
+                    <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", marginBottom: 16 }} />
+
+                    {/* Wallet Address row */}
+                    <p className="text-[9px] font-bold uppercase tracking-[0.18em] mb-2"
+                      style={{ color: "rgba(255,255,255,0.28)" }}>
+                      WALLET ADDRESS
+                    </p>
+                    <div className="flex items-center justify-between rounded-xl px-4 py-3"
+                      style={{
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                      }}>
+                      <span className="text-sm font-mono text-white" style={{ letterSpacing: "0.04em" }}>
+                        {reportData.address.slice(0, 8)}...{reportData.address.slice(-4)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyAddress(reportData.address)}
+                        className="flex items-center justify-center rounded-lg transition-opacity active:opacity-60"
+                        style={{
+                          width: 32, height: 32,
+                          background: "rgba(255,255,255,0.06)",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                        }}>
+                        {copiedAddress
+                          ? <CheckCheck style={{ width: 14, height: 14, color: GREEN }} />
+                          : <Copy style={{ width: 14, height: 14, color: "rgba(255,255,255,0.5)" }} />}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── 2×2 Detail cards ── */}
+              {(() => {
+                const isActive = reportData.totalTx > 0;
+                const cards = [
+                  {
+                    Icon: Activity,
+                    label: "NETWORK",
+                    value: "TRON",
+                    valueColor: "rgba(255,255,255,0.9)",
+                  },
+                  {
+                    Icon: Activity,
+                    label: "STATUS",
+                    value: isActive ? "Activo" : "Inactivo",
+                    valueColor: isActive ? GREEN : AMBER,
+                    dot: true,
+                    dotColor: isActive ? GREEN : AMBER,
+                  },
+                  {
+                    Icon: Zap,
+                    label: "BALANCE",
+                    value: `${reportData.balanceUSDT.toFixed(2)} USDT`,
+                    valueColor: "rgba(255,255,255,0.9)",
+                  },
+                  {
+                    Icon: Hash,
+                    label: "TX COUNT",
+                    value: String(reportData.totalTx),
+                    valueColor: "rgba(255,255,255,0.9)",
+                  },
+                ];
+                return (
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    {cards.map(({ Icon, label, value, valueColor, dot, dotColor }) => (
+                      <div key={label} className="rounded-2xl p-4"
+                        style={{
+                          background: "linear-gradient(135deg,#141A24 0%,#0D1117 100%)",
+                          border: "1px solid rgba(255,255,255,0.07)",
+                          boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+                        }}>
+                        {/* Icon + label row */}
+                        <div className="flex items-center gap-1.5 mb-2.5">
+                          <Icon style={{ width: 11, height: 11, color: "rgba(255,255,255,0.35)" }} />
+                          <span className="text-[9px] font-bold uppercase tracking-[0.16em]"
+                            style={{ color: "rgba(255,255,255,0.35)" }}>
+                            {label}
+                          </span>
+                        </div>
+                        {/* Value */}
+                        <div className="flex items-center gap-1.5">
+                          {dot && (
+                            <span className="inline-block rounded-full"
+                              style={{ width: 7, height: 7, background: dotColor, boxShadow: `0 0 6px ${dotColor}` }} />
+                          )}
+                          <span className="text-base font-bold" style={{ color: valueColor }}>
+                            {value}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* ── Full analysis report ── */}
+              <TronAnalysisReport reportData={reportData} />
+            </motion.div>
+          </AnimatePresence>
         ) : null}
       </div>
 
