@@ -159,9 +159,15 @@ function ContactItem({ contact, isSupport = false, onClick }: ContactItemProps) 
 interface ChatPageProps { wallets?: WalletEntry[]; }
 
 const ChatPage = ({ wallets = [] }: ChatPageProps) => {
-  // Identity
-  const [myCcId,    setMyCcId]    = useState<string | null>(null);
-  const [ccLoading, setCcLoading] = useState(true);
+  // Identity — read saved CC-ID synchronously on first render to avoid loading flash
+  const [myCcId,    setMyCcId]    = useState<string | null>(() => {
+    const saved = localStorage.getItem(CC_ID_KEY);
+    return saved && CC_RE.test(saved) ? saved : null;
+  });
+  const [ccLoading, setCcLoading] = useState<boolean>(() => {
+    const saved = localStorage.getItem(CC_ID_KEY);
+    return !saved || !CC_RE.test(saved); // only show loading on very first open
+  });
   // Contacts
   const [contacts,  setContacts]  = useState<Contact[]>(loadContacts);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
@@ -181,18 +187,24 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
   const [addLoading,setAddLoading]= useState(false);
   const [addError,  setAddError]  = useState("");
 
-  // ── CoinCash ID init — runs once on mount, no wallet required ───────────────
-  // Priority: 1) saved CC-ID in localStorage  2) wallet address  3) device ID
+  // ── CoinCash ID init — fully local, runs once on mount ──────────────────────
+  // 1. Read from localStorage (instant)
+  // 2. If missing, generate locally and save (never blocks on backend)
+  // 3. Fire-and-forget backend sync so the ID is persisted in the DB too
   useEffect(() => {
-    // Fast path: already have a saved CC-ID
-    const saved = localStorage.getItem(CC_ID_KEY);
-    if (saved && CC_RE.test(saved)) {
-      setMyCcId(saved);
-      setCcLoading(false);
-      return;
+    // Read or generate locally — synchronous, always succeeds
+    let ccId = localStorage.getItem(CC_ID_KEY);
+    if (!ccId || !CC_RE.test(ccId)) {
+      const digits = Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0");
+      ccId = `CC-${digits}`;
+      localStorage.setItem(CC_ID_KEY, ccId);
     }
 
-    // Choose the best available identifier for registration
+    // Activate the chat immediately — no API dependency
+    setMyCcId(ccId);
+    setCcLoading(false);
+
+    // Background sync to DB (fire-and-forget — failure is non-fatal)
     const identifier = (() => {
       if (wallets.length > 0) return wallets[0].address;
       try {
@@ -201,25 +213,12 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
       } catch { /* ignore */ }
       return getOrCreateDeviceId();
     })();
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const res  = await fetch(`${API}/users/lookup`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ walletAddress: identifier }),
-        });
-        const data = await res.json();
-        if (!cancelled && data.coincashId) {
-          localStorage.setItem(CC_ID_KEY, data.coincashId);
-          setMyCcId(data.coincashId);
-        }
-      } catch (e) { console.error("[chat] ccId init:", e); }
-      finally { if (!cancelled) setCcLoading(false); }
-    })();
-    return () => { cancelled = true; };
-  }, []); // Run once on mount — CC-ID is device-level, not wallet-level
+    fetch(`${API}/users/lookup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ walletAddress: identifier }),
+    }).catch(() => { /* backend unavailable — chat still works */ });
+  }, []); // Run once on mount
 
   // ── Generate QR for my CC-ID ────────────────────────────────────────────────
   useEffect(() => {
