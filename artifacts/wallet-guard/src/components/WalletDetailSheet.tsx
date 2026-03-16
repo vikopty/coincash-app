@@ -9,7 +9,7 @@ import QRCode from "qrcode";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-  fetchAccountInfo, fetchAllTransactions,
+  fetchAccountInfo, fetchAllTransactions, fetchUSDTLiveBalance,
   sendTRX, sendUSDT, relayUSDTTransfer, fetchRelayStatus,
   estimateUSDTTransferFee, SERVICE_FEE_USDT,
   type AccountInfo, type TxRecord, type RelayResult, type FeeEstimate, type FeeMode, type RelayStatus,
@@ -255,6 +255,35 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
     window.addEventListener("wg:new-transfer", handler);
     return () => window.removeEventListener("wg:new-transfer", handler);
   }, [wallet.address, loadWalletData]);
+
+  // ── 10-second USDT TRC20 live balance poller ─────────────────────────────────
+  // Independently polls the TRC20 transfers endpoint every 10 s and updates
+  // only the USDT balance field — much lighter than a full loadWalletData().
+  // Uses both balanceOf() and the transfer-history sum; takes the higher value.
+  // This ensures the balance stays current even between full data refreshes.
+  useEffect(() => {
+    let cancelled = false;
+
+    const pollUSDT = async () => {
+      try {
+        const usdtBalance = await fetchUSDTLiveBalance(wallet.address);
+        if (!cancelled) {
+          setInfo(prev => {
+            if (!prev) return prev;
+            // Only update if the value actually changed (avoid re-render noise)
+            if (Math.abs(prev.usdtBalance - usdtBalance) < 0.000001) return prev;
+            return { ...prev, usdtBalance };
+          });
+        }
+      } catch { /* non-fatal — next tick will retry */ }
+    };
+
+    const id = setInterval(pollUSDT, 10_000);
+    // Run immediately so the display is fresh when the sheet opens
+    pollUSDT();
+
+    return () => { cancelled = true; clearInterval(id); };
+  }, [wallet.address]);
 
   // ── Load fee estimate + live account resources when USDT send view opens ───
   useEffect(() => {

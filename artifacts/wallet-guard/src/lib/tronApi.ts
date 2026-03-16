@@ -265,12 +265,61 @@ async function fetchTRC20Balance(walletAddress: string, contractAddress: string)
   }
 }
 
+// ── USDT balance from TRC20 transfer history ──────────────────────────────────
+// Uses GET /v1/accounts/{address}/transactions/trc20 to sum all confirmed USDT
+// transfers.  Incoming transfers (to = wallet) are added; outgoing (from = wallet)
+// are subtracted.  Raw values are always divided by 1,000,000 (6 decimals).
+// This is a fast, real-time source that reflects the latest confirmed transfers
+// even before TronGrid's account endpoint cache updates.
+async function fetchUSDTFromTransfers(walletAddress: string): Promise<number> {
+  try {
+    await rateWait();
+    const res = await tronFetch(
+      `/v1/accounts/${walletAddress}/transactions/trc20` +
+      `?contract_address=${USDT_CONTRACT}&limit=200&only_confirmed=true`,
+    );
+    if (!res.ok) return 0;
+    const json  = await res.json();
+    const lower = walletAddress.toLowerCase();
+    let balance = 0;
+
+    for (const tx of json.data ?? []) {
+      // Extra guard: skip if the token is not USDT (symbol check when available)
+      const sym = tx.token_info?.symbol;
+      if (sym && sym !== "USDT") continue;
+
+      const raw    = parseFloat(tx.value ?? "0");
+      const amount = Number.isFinite(raw) ? raw / 1_000_000 : 0;
+
+      if ((tx.to   ?? "").toLowerCase() === lower) balance += amount;
+      else if ((tx.from ?? "").toLowerCase() === lower) balance -= amount;
+    }
+
+    return Math.max(0, balance);
+  } catch {
+    return 0;
+  }
+}
+
+// ── Live USDT balance — exported for the 10-second wallet-sheet poller ────────
+// Runs both approaches in parallel and returns the highest value:
+//   1. balanceOf() smart-contract call — authoritative for the current block
+//   2. Transfer-history sum            — reflects latest confirmed transfers fast
+export async function fetchUSDTLiveBalance(walletAddress: string): Promise<number> {
+  const [fromContract, fromTransfers] = await Promise.all([
+    fetchTRC20Balance(walletAddress, USDT_CONTRACT),
+    fetchUSDTFromTransfers(walletAddress),
+  ]);
+  return Math.max(fromContract, fromTransfers, 0);
+}
+
 // ── Fetch account info ────────────────────────────────────────────────────────
-// Fetches TRX balance from the account endpoint, and USDT balance via a direct
-// balanceOf() call to both known USDT contract addresses. Takes the maximum.
+// Fetches TRX balance from the account endpoint and USDT balance from three
+// independent sources: balanceOf() x2, account trc20 array, transfer history sum.
+// Takes the maximum across all sources to handle TronGrid caching delays.
 export async function fetchAccountInfo(address: string): Promise<AccountInfo> {
-  // Run all three requests in parallel for speed
-  const [accountRes, balanceOf1, balanceOf2] = await Promise.all([
+  // Run all four requests in parallel for speed
+  const [accountRes, balanceOf1, balanceOf2, fromTransfers] = await Promise.all([
     (async () => {
       await rateWait();
       const res = await tronFetch(`/v1/accounts/${address}`);
@@ -278,13 +327,14 @@ export async function fetchAccountInfo(address: string): Promise<AccountInfo> {
     })(),
     fetchTRC20Balance(address, USDT_CONTRACT),
     fetchTRC20Balance(address, USDT_CONTRACT2),
+    fetchUSDTFromTransfers(address),
   ]);
 
   // TRX balance from account endpoint
   let trxBalance = 0;
   let activated  = false;
-  // Start USDT candidates from the direct contract calls (authoritative)
-  let usdtCandidates = [balanceOf1, balanceOf2];
+  // Start USDT candidates from all direct sources
+  let usdtCandidates = [balanceOf1, balanceOf2, fromTransfers];
 
   if (accountRes?.data && accountRes.data.length > 0) {
     const acc = accountRes.data[0];
