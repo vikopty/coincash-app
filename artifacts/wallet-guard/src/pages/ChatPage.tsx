@@ -8,12 +8,27 @@ import QRCode from "qrcode";
 import { Html5Qrcode } from "html5-qrcode";
 import { toast } from "sonner";
 
-const API        = "/api-server/api";
-const SUPPORT_ID = "CC-SUPPORT";
-const GREEN      = "#19C37D";
-const CC_RE      = /^CC-\d{6}$/;
-const CC_QR_EL   = "wg-chat-cc-scanner";
+const API          = "/api-server/api";
+const SUPPORT_ID   = "CC-SUPPORT";
+const GREEN        = "#19C37D";
+const CC_RE        = /^CC-\d{6}$/;
+const CC_QR_EL     = "wg-chat-cc-scanner";
 const CONTACTS_KEY = "wg_chat_contacts";
+const CC_ID_KEY    = "wg_coincash_id";   // persisted CC-ID (independent of wallet)
+const DEVICE_KEY   = "wg_device_id";     // stable device identifier for wallet-free users
+
+/** Return or create a stable device identifier stored in localStorage. */
+function getOrCreateDeviceId(): string {
+  let id = localStorage.getItem(DEVICE_KEY);
+  if (!id) {
+    // Use crypto.randomUUID when available, otherwise Math.random fallback
+    id = typeof crypto !== "undefined" && crypto.randomUUID
+      ? "dev-" + crypto.randomUUID().replace(/-/g, "")
+      : "dev-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem(DEVICE_KEY, id);
+  }
+  return id;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface WalletEntry { address: string; name?: string; }
@@ -166,35 +181,45 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
   const [addLoading,setAddLoading]= useState(false);
   const [addError,  setAddError]  = useState("");
 
-  // ── Wallet → CoinCash ID ────────────────────────────────────────────────────
-  const firstAddress = (() => {
-    if (wallets.length > 0) return wallets[0].address;
-    try {
-      const stored: WalletEntry[] = JSON.parse(localStorage.getItem("wg_wallets") || "[]");
-      return stored[0]?.address ?? null;
-    } catch { return null; }
-  })();
-
+  // ── CoinCash ID init — runs once on mount, no wallet required ───────────────
+  // Priority: 1) saved CC-ID in localStorage  2) wallet address  3) device ID
   useEffect(() => {
-    setMyCcId(null);
-    setMessages([]);
-    setCcLoading(true);
-    if (!firstAddress) { setCcLoading(false); return; }
+    // Fast path: already have a saved CC-ID
+    const saved = localStorage.getItem(CC_ID_KEY);
+    if (saved && CC_RE.test(saved)) {
+      setMyCcId(saved);
+      setCcLoading(false);
+      return;
+    }
+
+    // Choose the best available identifier for registration
+    const identifier = (() => {
+      if (wallets.length > 0) return wallets[0].address;
+      try {
+        const stored: WalletEntry[] = JSON.parse(localStorage.getItem("wg_wallets") || "[]");
+        if (stored[0]?.address) return stored[0].address;
+      } catch { /* ignore */ }
+      return getOrCreateDeviceId();
+    })();
+
     let cancelled = false;
     (async () => {
       try {
         const res  = await fetch(`${API}/users/lookup`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ walletAddress: firstAddress }),
+          body: JSON.stringify({ walletAddress: identifier }),
         });
         const data = await res.json();
-        if (!cancelled && data.coincashId) setMyCcId(data.coincashId);
-      } catch (e) { console.error("[chat] ccId lookup:", e); }
+        if (!cancelled && data.coincashId) {
+          localStorage.setItem(CC_ID_KEY, data.coincashId);
+          setMyCcId(data.coincashId);
+        }
+      } catch (e) { console.error("[chat] ccId init:", e); }
       finally { if (!cancelled) setCcLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [firstAddress]);
+  }, []); // Run once on mount — CC-ID is device-level, not wallet-level
 
   // ── Generate QR for my CC-ID ────────────────────────────────────────────────
   useEffect(() => {
@@ -409,7 +434,25 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
         </div>
       </div>
 
-      {/* ─── No wallet placeholder ───────────────────────────────────────────── */}
+      {/* ─── Loading / generating ID state ──────────────────────────────────── */}
+      {ccLoading && (
+        <div style={{
+          flex: 1, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", gap: "14px", padding: "32px",
+        }}>
+          <div style={{
+            width: "48px", height: "48px", borderRadius: "50%",
+            border: `3px solid ${GREEN}30`, borderTopColor: GREEN,
+            animation: "spin 0.8s linear infinite",
+          }} />
+          <p style={{ color: "rgba(255,255,255,0.35)", fontSize: "13px", textAlign: "center", margin: 0 }}>
+            Generando tu CoinCash ID…
+          </p>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
+      {/* ─── Error state (CC-ID could not be generated) ──────────────────────── */}
       {!ccLoading && !myCcId && (
         <div style={{
           flex: 1, display: "flex", flexDirection: "column",
@@ -417,7 +460,7 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
         }}>
           <MessageCircle size={48} color="rgba(255,255,255,0.15)" />
           <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "14px", textAlign: "center", margin: 0 }}>
-            Agrega una wallet para obtener tu CoinCash ID y acceder al chat.
+            No se pudo generar tu CoinCash ID. Verifica tu conexión e intenta de nuevo.
           </p>
         </div>
       )}
@@ -425,6 +468,42 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
       {/* ─── Contacts list ───────────────────────────────────────────────────── */}
       {myCcId && !activeContact && (
         <div style={{ flex: 1, overflowY: "auto" }}>
+
+          {/* CC-ID profile card */}
+          <div style={{
+            margin: "14px 14px 4px",
+            background: "linear-gradient(135deg, rgba(25,195,125,0.10) 0%, rgba(25,195,125,0.04) 100%)",
+            border: `1px solid ${GREEN}30`,
+            borderRadius: "16px", padding: "14px 16px",
+            display: "flex", alignItems: "center", gap: "12px",
+          }}>
+            <div style={{
+              width: "40px", height: "40px", borderRadius: "50%", flexShrink: 0,
+              background: `${GREEN}18`, border: `1.5px solid ${GREEN}50`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: "18px",
+            }}>
+              🪪
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: "rgba(255,255,255,0.45)", fontSize: "11px", marginBottom: "3px" }}>
+                Tu CoinCash ID
+              </div>
+              <div style={{
+                color: GREEN, fontSize: "17px", fontWeight: 700,
+                fontFamily: "monospace", letterSpacing: "1.5px",
+              }}>
+                {myCcId}
+              </div>
+            </div>
+            <button
+              onClick={copyMyCcId}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: "6px", color: GREEN, display: "flex", flexShrink: 0 }}
+            >
+              {copiedId ? <CheckCheck size={17} /> : <Copy size={17} />}
+            </button>
+          </div>
+
           {/* Pinned: Support */}
           <ContactItem
             contact={{ ccId: SUPPORT_ID, name: "Soporte CoinCash", addedAt: "" }}
@@ -437,10 +516,10 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
           ))}
           {contacts.length === 0 && (
             <p style={{
-              padding: "32px 24px", color: "rgba(255,255,255,0.22)",
+              padding: "24px 24px 32px", color: "rgba(255,255,255,0.22)",
               fontSize: "13px", textAlign: "center", margin: 0,
             }}>
-              No tienes contactos aún.{"\n"}Usa el botón + para agregar uno.
+              No tienes contactos aún. Usa el botón + para agregar uno.
             </p>
           )}
         </div>
