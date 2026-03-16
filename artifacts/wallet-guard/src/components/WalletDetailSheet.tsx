@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   X, ArrowLeft, Copy, CheckCheck, ArrowDownLeft, ArrowUpRight,
   Loader2, QrCode, Send, RefreshCw, AlertTriangle, Clock,
-  ChevronRight, Wallet, ShieldAlert, Pencil, ArrowLeftRight,
+  ChevronRight, Wallet, ShieldAlert, Pencil, ArrowLeftRight, Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import QRCode from "qrcode";
@@ -17,6 +17,7 @@ import {
 import { decryptPrivateKey, hasEncryptedKey } from "@/lib/security";
 import type { SavedWallet } from "@/pages/WalletsPage";
 import { loadAllRisks, saveRisk, fetchRiskAnalysis, type RiskResult } from "@/lib/riskCache";
+import QRScannerDialog from "@/components/QRScannerDialog";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const BG     = "#0B0F14";
@@ -120,6 +121,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
   const [sendTo, setSendTo]       = useState("");
   const [sendAmt, setSendAmt]     = useState("");
   const [sendLoading, setSendLoading] = useState(false);
+  const [sendScannerOpen, setSendScannerOpen] = useState(false);
   const [sentTxId, setSentTxId]           = useState("");
   const [sentFeeTxId, setSentFeeTxId]     = useState("");   // treasury service-fee tx
   const [sentSponsored, setSentSponsored] = useState(false);
@@ -884,14 +886,24 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                   style={{ color: "rgba(255,255,255,0.4)" }}>
                   Dirección destino
                 </label>
-                <input
-                  type="text"
-                  placeholder="T..."
-                  value={sendTo}
-                  onChange={e => setSendTo(e.target.value)}
-                  className="w-full rounded-2xl px-4 py-3.5 text-sm text-white outline-none font-mono mb-4"
-                  style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}` }}
-                />
+                <div className="relative mb-4">
+                  <input
+                    type="text"
+                    placeholder="T..."
+                    value={sendTo}
+                    onChange={e => setSendTo(e.target.value)}
+                    className="w-full rounded-2xl px-4 py-3.5 pr-12 text-sm text-white outline-none font-mono"
+                    style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}` }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSendScannerOpen(true)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-xl transition-opacity active:opacity-60"
+                    style={{ width: 30, height: 30, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)" }}
+                  >
+                    <Camera size={15} style={{ color: "rgba(255,255,255,0.55)" }} />
+                  </button>
+                </div>
 
                 {sendToken === "USDT" && (
                   <>
@@ -1068,6 +1080,22 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
           </div>
         </div>
       )}
+
+      {/* ── QR Scanner for "Dirección destino" in Send Funds ─────────────────── */}
+      <QRScannerDialog
+        open={sendScannerOpen}
+        onOpenChange={setSendScannerOpen}
+        onScanSuccess={(raw: string) => {
+          // Strip optional "tron:" URI prefix
+          const text = raw.replace(/^tron:/i, "").trim();
+          if (!text.startsWith("T") || text.length !== 34) {
+            toast.error("Dirección TRON no válida");
+            return;
+          }
+          setSendTo(text);
+          toast.success("Dirección escaneada correctamente");
+        }}
+      />
     </div>
   );
 }
