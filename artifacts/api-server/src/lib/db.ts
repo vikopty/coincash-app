@@ -218,8 +218,7 @@ export async function saveChatMessage(
 }
 
 /**
- * Retrieve all messages between two CoinCash IDs, in chronological order.
- * Also returns messages where ccId is involved with the support ID.
+ * Retrieve all messages where ccId is sender or receiver (full inbox).
  */
 export async function getChatMessages(ccId: string, limit = 100): Promise<ChatMessage[]> {
   const res = await pool.query<ChatMessage>(
@@ -230,6 +229,27 @@ export async function getChatMessages(ccId: string, limit = 100): Promise<ChatMe
       ORDER BY timestamp ASC
       LIMIT $2`,
     [ccId, limit],
+  );
+  return res.rows;
+}
+
+/**
+ * Retrieve only the messages exchanged between two specific CoinCash IDs.
+ * Ordered chronologically.
+ */
+export async function getConversation(
+  ccId1: string,
+  ccId2: string,
+  limit = 200,
+): Promise<ChatMessage[]> {
+  const res = await pool.query<ChatMessage>(
+    `SELECT id, sender_coincash_id, receiver_coincash_id, message, timestamp
+       FROM chat_messages
+      WHERE (sender_coincash_id = $1 AND receiver_coincash_id = $2)
+         OR (sender_coincash_id = $2 AND receiver_coincash_id = $1)
+      ORDER BY timestamp ASC
+      LIMIT $3`,
+    [ccId1, ccId2, limit],
   );
   return res.rows;
 }

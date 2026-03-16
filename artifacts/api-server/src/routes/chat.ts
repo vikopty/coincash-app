@@ -4,7 +4,7 @@
 // GET  /api/chat/messages?user=CC-XXX  — fetch messages for a user
 
 import { Router } from "express";
-import { saveChatMessage, getChatMessages } from "../lib/db";
+import { saveChatMessage, getChatMessages, getConversation } from "../lib/db";
 
 const SUPPORT_ID = "CC-SUPPORT";
 const router = Router();
@@ -46,16 +46,23 @@ router.post("/chat/messages", async (req, res) => {
 });
 
 /**
- * GET /api/chat/messages?user=CC-XXXXXX
- * Returns all messages where the given CoinCash ID is sender or receiver.
+ * GET /api/chat/messages?user=CC-XXXXXX[&peer=CC-YYYYYY]
+ * Without peer: returns all messages where user is sender or receiver.
+ * With peer:    returns only the conversation between user and peer.
+ * peer may also be "CC-SUPPORT".
  */
 router.get("/chat/messages", async (req, res) => {
-  const { user } = req.query as { user?: string };
+  const { user, peer } = req.query as { user?: string; peer?: string };
   if (!user || !/^CC-\d{6}$/.test(user)) {
     return res.status(400).json({ error: "user must be a valid CoinCash ID (CC-XXXXXX)" });
   }
+  if (peer !== undefined && peer !== SUPPORT_ID && !/^CC-\d{6}$/.test(peer)) {
+    return res.status(400).json({ error: "peer must be CC-SUPPORT or a valid CC-XXXXXX" });
+  }
   try {
-    const rows = await getChatMessages(user);
+    const rows = peer
+      ? await getConversation(user, peer)
+      : await getChatMessages(user);
     return res.json({ messages: rows.map(formatMsg) });
   } catch (err: any) {
     console.error("[chat] fetch error:", err?.message);
