@@ -229,14 +229,16 @@ export interface ChatUserRecord {
   coincash_id: string;
   name:        string;
   role:        string;
+  linked_to:   string | null;
   created_at:  Date;
 }
 
 const SYSTEM_SUPPORT_ID = "CC-SUPPORT";
+const ADMIN_CC_ID        = "CC-801286";
 
-/** Create the chat_users table and seed the CC-SUPPORT system account. */
+/** Create the chat_users table and seed system accounts. */
 export async function ensureChatUsersTable(): Promise<void> {
-  // Create table
+  // Create base table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chat_users (
       id          SERIAL    PRIMARY KEY,
@@ -246,21 +248,32 @@ export async function ensureChatUsersTable(): Promise<void> {
       created_at  TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
-  // Add name/role columns if table existed before this migration (idempotent)
-  await pool.query(`ALTER TABLE chat_users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT ''`);
-  await pool.query(`ALTER TABLE chat_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'`);
+  // Idempotent column additions (safe if already exist)
+  await pool.query(`ALTER TABLE chat_users ADD COLUMN IF NOT EXISTS name      TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE chat_users ADD COLUMN IF NOT EXISTS role      TEXT NOT NULL DEFAULT 'user'`);
+  await pool.query(`ALTER TABLE chat_users ADD COLUMN IF NOT EXISTS linked_to TEXT`);
 
-  // Seed the permanent CC-SUPPORT system account
+  // 1. Seed CC-SUPPORT system account
   await pool.query(
-    `INSERT INTO chat_users (coincash_id, name, role)
-     VALUES ($1, $2, $3)
+    `INSERT INTO chat_users (coincash_id, name, role, linked_to)
+     VALUES ($1, $2, $3, NULL)
      ON CONFLICT (coincash_id) DO UPDATE
-       SET name = EXCLUDED.name,
-           role = EXCLUDED.role`,
+       SET name = EXCLUDED.name, role = EXCLUDED.role`,
     [SYSTEM_SUPPORT_ID, "Soporte CoinCash", "system"],
   );
 
-  console.log("[db] chat_users table ready — CC-SUPPORT seeded");
+  // 2. Seed CC-801286 as admin linked to CC-SUPPORT
+  await pool.query(
+    `INSERT INTO chat_users (coincash_id, name, role, linked_to)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (coincash_id) DO UPDATE
+       SET name      = EXCLUDED.name,
+           role      = EXCLUDED.role,
+           linked_to = EXCLUDED.linked_to`,
+    [ADMIN_CC_ID, "Soporte CoinCash", "admin", SYSTEM_SUPPORT_ID],
+  );
+
+  console.log("[db] chat_users table ready — CC-SUPPORT + admin seeded");
 }
 
 /**
@@ -269,10 +282,10 @@ export async function ensureChatUsersTable(): Promise<void> {
  */
 export async function getOrCreateChatUser(coincashId: string): Promise<ChatUserRecord> {
   const res = await pool.query<ChatUserRecord>(
-    `INSERT INTO chat_users (coincash_id, name, role)
-     VALUES ($1, '', 'user')
+    `INSERT INTO chat_users (coincash_id, name, role, linked_to)
+     VALUES ($1, '', 'user', NULL)
      ON CONFLICT (coincash_id) DO UPDATE SET coincash_id = EXCLUDED.coincash_id
-     RETURNING id, coincash_id, name, role, created_at`,
+     RETURNING id, coincash_id, name, role, linked_to, created_at`,
     [coincashId],
   );
   return res.rows[0];
@@ -281,7 +294,7 @@ export async function getOrCreateChatUser(coincashId: string): Promise<ChatUserR
 /** Look up a chat user by CoinCash ID. Returns null if not found. */
 export async function getChatUserById(coincashId: string): Promise<ChatUserRecord | null> {
   const res = await pool.query<ChatUserRecord>(
-    `SELECT id, coincash_id, name, role, created_at
+    `SELECT id, coincash_id, name, role, linked_to, created_at
        FROM chat_users
       WHERE coincash_id = $1
       LIMIT 1`,
@@ -293,7 +306,7 @@ export async function getChatUserById(coincashId: string): Promise<ChatUserRecor
 /** Return all regular (non-system) chat users. Used by broadcast. */
 export async function getAllChatUsers(): Promise<ChatUserRecord[]> {
   const res = await pool.query<ChatUserRecord>(
-    `SELECT id, coincash_id, name, role, created_at
+    `SELECT id, coincash_id, name, role, linked_to, created_at
        FROM chat_users
       WHERE role != 'system'
       ORDER BY created_at ASC`,

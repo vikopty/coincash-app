@@ -93,12 +93,15 @@ router.post("/chat/broadcast", async (req, res) => {
 /**
  * POST /api/chat/messages
  * Body: { senderCcId, message, receiverCcId? }
- * Saves message and returns auto-reply from support.
+ *
+ * If the sender has role='admin' and linked_to='CC-SUPPORT', the message is
+ * stored as coming from CC-SUPPORT (transparent proxy).  The auto-reply is
+ * suppressed in that case since the admin IS the support agent.
  */
 router.post("/chat/messages", async (req, res) => {
   const { senderCcId, message, receiverCcId = SUPPORT_ID } = req.body ?? {};
 
-  if (!senderCcId || typeof senderCcId !== "string" || !/^CC-\d{6}$/.test(senderCcId)) {
+  if (!senderCcId || typeof senderCcId !== "string" || !CC_RE.test(senderCcId)) {
     return res.status(400).json({ error: "senderCcId must be a valid CoinCash ID (CC-XXXXXX)" });
   }
   if (!message || typeof message !== "string" || message.trim().length === 0) {
@@ -106,20 +109,26 @@ router.post("/chat/messages", async (req, res) => {
   }
 
   try {
-    // Save the user's message
-    const saved = await saveChatMessage(senderCcId, receiverCcId, message.trim());
+    // Resolve effective sender: admin → linked_to (CC-SUPPORT)
+    const senderRecord   = await getChatUserById(senderCcId);
+    const effectiveSender = senderRecord?.linked_to ?? senderCcId;
+    const isAdmin        = senderRecord?.role === "admin" && !!senderRecord.linked_to;
 
-    // Auto-reply from support
-    const reply = await saveChatMessage(
-      SUPPORT_ID,
-      senderCcId,
-      "Gracias por tu mensaje. Un agente de soporte se pondrá en contacto contigo pronto.",
-    );
+    // Save the message (from effectiveSender to receiver)
+    const saved = await saveChatMessage(effectiveSender, receiverCcId, message.trim());
 
-    return res.json({
-      sent:  formatMsg(saved),
-      reply: formatMsg(reply),
-    });
+    // Auto-reply from support only when a regular user messages support
+    // (skip if the sender is already the admin acting as support)
+    if (!isAdmin) {
+      const reply = await saveChatMessage(
+        SUPPORT_ID,
+        senderCcId,
+        "Gracias por tu mensaje. Un agente de soporte se pondrá en contacto contigo pronto.",
+      );
+      return res.json({ sent: formatMsg(saved), reply: formatMsg(reply) });
+    }
+
+    return res.json({ sent: formatMsg(saved) });
   } catch (err: any) {
     console.error("[chat] send error:", err?.message);
     return res.status(500).json({ error: "Failed to save message" });
@@ -131,19 +140,25 @@ router.post("/chat/messages", async (req, res) => {
  * Without peer: returns all messages where user is sender or receiver.
  * With peer:    returns only the conversation between user and peer.
  * peer may also be "CC-SUPPORT".
+ *
+ * If user has linked_to set (admin), messages are fetched for the linked
+ * account (CC-SUPPORT) so the admin sees all support conversations.
  */
 router.get("/chat/messages", async (req, res) => {
   const { user, peer } = req.query as { user?: string; peer?: string };
-  if (!user || !/^CC-\d{6}$/.test(user)) {
+  if (!user || !CC_RE.test(user)) {
     return res.status(400).json({ error: "user must be a valid CoinCash ID (CC-XXXXXX)" });
   }
-  if (peer !== undefined && peer !== SUPPORT_ID && !/^CC-\d{6}$/.test(peer)) {
+  if (peer !== undefined && !VALID_ID(peer)) {
     return res.status(400).json({ error: "peer must be CC-SUPPORT or a valid CC-XXXXXX" });
   }
   try {
+    // Admin sees CC-SUPPORT's messages instead of their own
+    const userRecord    = await getChatUserById(user);
+    const effectiveUser = userRecord?.linked_to ?? user;
     const rows = peer
-      ? await getConversation(user, peer)
-      : await getChatMessages(user);
+      ? await getConversation(effectiveUser, peer)
+      : await getChatMessages(effectiveUser);
     return res.json({ messages: rows.map(formatMsg) });
   } catch (err: any) {
     console.error("[chat] fetch error:", err?.message);
