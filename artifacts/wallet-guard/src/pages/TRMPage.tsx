@@ -16,14 +16,16 @@ interface Props {
   onClose?: () => void;
 }
 
-// ── TwelveData quote ──────────────────────────────────────────────────────────
+// ── Quote shape ───────────────────────────────────────────────────────────────
 interface Quote {
-  price:          number;
-  previousClose:  number;
-  change:         number;
-  percentChange:  number;
+  price:         number;
+  previousClose: number;
+  change:        number;
+  percentChange: number;
 }
 
+// ── REST fetch — used once on mount and on manual refresh ─────────────────────
+// Provides previousClose so the WebSocket-only price updates can derive change %.
 async function fetchQuote(): Promise<Quote> {
   const res = await fetch(
     "https://api.twelvedata.com/quote?symbol=USD/COP&apikey=demo",
@@ -36,7 +38,7 @@ async function fetchQuote(): Promise<Quote> {
   const previousClose = parseFloat(data.previous_close ?? data.close ?? "0");
   const change        = parseFloat(data.change         ?? "0");
   const percentChange = parseFloat(data.percent_change ?? "0");
-  if (!price) throw new Error("Price not found in response");
+  if (!price) throw new Error("Price not found");
   return { price, previousClose, change, percentChange };
 }
 
@@ -48,7 +50,7 @@ function fmtCOP(n: number, decimals = 2): string {
   });
 }
 
-// ── Skeleton pill ─────────────────────────────────────────────────────────────
+// ── Skeleton ──────────────────────────────────────────────────────────────────
 function Skeleton({ w, h = 4 }: { w: number; h?: number }) {
   return (
     <div className="animate-pulse rounded-full"
@@ -60,33 +62,30 @@ function Skeleton({ w, h = 4 }: { w: number; h?: number }) {
 function MetricCard({
   label, value, sub, color, accent, icon: Icon,
 }: {
-  label: string;
-  value: string;
-  sub?: string;
-  color: string;
-  accent?: string;
-  icon?: React.ElementType;
+  label: string; value: string; sub?: string;
+  color: string; accent?: string; icon?: React.ElementType;
 }) {
   return (
-    <div
-      className="flex flex-col gap-2 rounded-2xl p-4"
-      style={{ background: CARD, border: `1px solid ${accent ?? BORDER}`, boxShadow: SHADOW }}
-    >
+    <div className="flex flex-col gap-2 rounded-2xl p-4"
+      style={{ background: CARD, border: `1px solid ${accent ?? BORDER}`, boxShadow: SHADOW }}>
       <div className="flex items-center gap-1.5">
         {Icon && <Icon className="h-3 w-3 shrink-0" style={{ color: "rgba(255,255,255,0.3)" }} />}
         <p className="text-[9px] font-bold uppercase tracking-widest"
           style={{ color: "rgba(255,255,255,0.28)" }}>{label}</p>
       </div>
       <p className="text-base font-extrabold leading-tight tracking-tight" style={{ color }}>{value}</p>
-      {sub && (
-        <p className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>{sub}</p>
-      )}
+      {sub && <p className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>{sub}</p>}
     </div>
   );
 }
 
+// ── WebSocket URL ─────────────────────────────────────────────────────────────
+const WS_URL = "wss://ws.twelvedata.com/v1/quotes/price?apikey=demo";
+// Reconnect delay (ms) after an unexpected close
+const RECONNECT_MS = 3_000;
+
 // ── Page ──────────────────────────────────────────────────────────────────────
-const REFRESH_SECS = 20;
+type WsStatus = "connecting" | "live" | "disconnected";
 
 export default function TRMPage({ onClose }: Props) {
   const [quote, setQuote]           = useState<Quote | null>(null);
@@ -95,27 +94,24 @@ export default function TRMPage({ onClose }: Props) {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
-  const [countdown, setCountdown]   = useState(REFRESH_SECS);
-  const countdownRef                = useRef<ReturnType<typeof setInterval> | null>(null);
-  const quoteRef                    = useRef<Quote | null>(null);
+  const [wsStatus, setWsStatus]     = useState<WsStatus>("connecting");
 
-  // Keep ref in sync for stale-closure-safe reads inside callbacks
+  // Stable ref — always holds latest quote without causing stale closures
+  const quoteRef = useRef<Quote | null>(null);
   useEffect(() => { quoteRef.current = quote; }, [quote]);
 
+  // ── REST: initial load + manual refresh ──────────────────────────────────
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     setError(null);
     try {
       const q = await fetchQuote();
-      // Capture previous tick price before overwriting
       setPrevPrice(quoteRef.current?.price ?? null);
       setQuote(q);
-      setUsdCopRate(q.price);   // publish to global store for wallet COP display
+      setUsdCopRate(q.price);
       setFlash(true);
       setTimeout(() => setFlash(false), 700);
-      setCountdown(REFRESH_SECS);
-    } catch (err) {
-      // Keep last known quote visible; only show error when there is no data yet
+    } catch {
       if (!quoteRef.current) {
         setError("No se pudo obtener el precio. Verifica tu conexión.");
       }
@@ -125,28 +121,84 @@ export default function TRMPage({ onClose }: Props) {
     }
   }, []);
 
-  // Initial load + 20-second auto-refresh
-  useEffect(() => {
-    load();
-    const t = setInterval(() => load(), REFRESH_SECS * 1000);
-    return () => clearInterval(t);
-  }, [load]);
+  // Fetch initial quote on mount (provides previousClose for WS-derived change %)
+  useEffect(() => { load(); }, [load]);
 
-  // Countdown ticker — resets whenever a new quote arrives
+  // ── WebSocket: real-time price stream ────────────────────────────────────
   useEffect(() => {
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    countdownRef.current = setInterval(() => {
-      setCountdown(p => (p <= 1 ? REFRESH_SECS : p - 1));
-    }, 1_000);
-    return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
-  }, [quote]);
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    function connect() {
+      if (cancelled) return;
+      setWsStatus("connecting");
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => {
+        ws!.send(JSON.stringify({
+          action: "subscribe",
+          params: { symbols: "USD/COP" },
+        }));
+      };
+
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data as string);
+
+          // Live price tick
+          if (msg.event === "price" && msg.symbol === "USD/COP") {
+            const newPrice = parseFloat(msg.price);
+            if (!newPrice || !isFinite(newPrice)) return;
+
+            setWsStatus("live");
+            setPrevPrice(quoteRef.current?.price ?? null);
+
+            setQuote(prev => {
+              if (!prev) return prev;               // wait for initial REST load
+              const previousClose  = prev.previousClose;
+              const change         = newPrice - previousClose;
+              const percentChange  = previousClose ? (change / previousClose) * 100 : 0;
+              return { ...prev, price: newPrice, change, percentChange };
+            });
+
+            setUsdCopRate(newPrice);
+            setFlash(true);
+            setTimeout(() => setFlash(false), 700);
+          }
+
+          // Subscription confirmed
+          if (msg.event === "subscribe-status") {
+            if (msg.status === "ok") setWsStatus("live");
+          }
+        } catch { /* malformed frame — ignore */ }
+      };
+
+      ws.onerror = () => {
+        ws?.close();
+      };
+
+      ws.onclose = () => {
+        if (cancelled) return;
+        setWsStatus("disconnected");
+        reconnectTimer = setTimeout(connect, RECONNECT_MS);
+      };
+    }
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, []);
 
   // ── Derived display values ─────────────────────────────────────────────────
-  const pct  = quote?.percentChange ?? 0;
-  const isUp   = pct >  0.005;
-  const isDown = pct < -0.005;
+  const pct      = quote?.percentChange ?? 0;
+  const isUp     = pct >  0.005;
+  const isDown   = pct < -0.005;
 
-  // Tick-to-tick direction (current fetch vs previous fetch — animation only)
   const tickDir: "up" | "down" | "neutral" =
     prevPrice === null || quote === null ? "neutral"
     : quote.price > prevPrice ? "up"
@@ -159,6 +211,13 @@ export default function TRMPage({ onClose }: Props) {
   const pctAccent   = changeColor === BLUE  ? "rgba(59,130,246,0.30)"
                     : changeColor === GREEN ? "rgba(25,195,125,0.30)"
                     : "rgba(255,77,79,0.30)";
+
+  // Status bar label & dot color
+  const statusDot   = wsStatus === "live" ? GREEN : wsStatus === "connecting" ? AMBER : DANGER;
+  const statusLabel =
+    wsStatus === "live"         ? "En vivo · twelvedata.com"
+    : wsStatus === "connecting" ? "Conectando…"
+    : "Reconectando…";
 
   return (
     <div className="flex flex-col"
@@ -175,10 +234,11 @@ export default function TRMPage({ onClose }: Props) {
         <div className="flex-1 mx-3">
           <p className="text-sm font-bold text-white leading-tight">USD/COP Mercado 🇨🇴</p>
           <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.3)" }}>
-            Precio spot en tiempo real · Actualización cada {REFRESH_SECS}s
+            Streaming en tiempo real · WebSocket
           </p>
         </div>
 
+        {/* Manual refresh — re-fetches previousClose from REST */}
         <button onClick={() => load(true)} disabled={refreshing}
           className="flex h-9 w-9 items-center justify-center rounded-full disabled:opacity-40"
           style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -225,8 +285,7 @@ export default function TRMPage({ onClose }: Props) {
               <div className="flex items-center gap-2 mb-0.5">
                 {tickDir === "up"   && <ArrowUp   className="h-6 w-6 shrink-0" style={{ color: GREEN }}  />}
                 {tickDir === "down" && <ArrowDown  className="h-6 w-6 shrink-0" style={{ color: DANGER }} />}
-                <span
-                  className="text-4xl font-extrabold tracking-tight"
+                <span className="text-4xl font-extrabold tracking-tight"
                   style={{
                     color: prevPrice === null ? "white" : tickColor,
                     textShadow: flash && tickDir !== "neutral" ? `0 0 24px ${tickColor}90` : "none",
@@ -242,7 +301,7 @@ export default function TRMPage({ onClose }: Props) {
             </div>
           )}
 
-          {/* Change chip inside hero */}
+          {/* Change chip */}
           {!loading && quote && (() => {
             const up    = pct >  0.005;
             const down  = pct < -0.005;
@@ -275,7 +334,6 @@ export default function TRMPage({ onClose }: Props) {
           </div>
         ) : quote ? (
           <div className="grid grid-cols-2 gap-3">
-
             <MetricCard
               label="Precio actual"
               value={`${fmtCOP(quote.price)} COP`}
@@ -284,7 +342,6 @@ export default function TRMPage({ onClose }: Props) {
               accent={prevPrice !== null ? `${tickColor}30` : BORDER}
               icon={tickDir === "up" ? ArrowUp : tickDir === "down" ? ArrowDown : Minus}
             />
-
             <MetricCard
               label="Precio cierre"
               value={`${fmtCOP(quote.previousClose)} COP`}
@@ -292,7 +349,6 @@ export default function TRMPage({ onClose }: Props) {
               color="rgba(255,255,255,0.75)"
               accent={BORDER}
             />
-
             <MetricCard
               label="Cambio %"
               value={`${quote.percentChange >= 0 ? "+" : ""}${quote.percentChange.toFixed(3)}%`}
@@ -301,7 +357,6 @@ export default function TRMPage({ onClose }: Props) {
               accent={pctAccent}
               icon={isUp ? TrendingUp : isDown ? TrendingDown : Minus}
             />
-
             <MetricCard
               label="Cambio COP"
               value={`${quote.change >= 0 ? "+" : ""}${fmtCOP(quote.change)} COP`}
@@ -312,7 +367,7 @@ export default function TRMPage({ onClose }: Props) {
           </div>
         ) : null}
 
-        {/* ── Error state ───────────────────────────────────────────────── */}
+        {/* ── Error state ───────────────────────────────────────────────────── */}
         {error && !quote && (
           <div className="rounded-2xl p-5 flex flex-col items-center gap-3 text-center"
             style={{ background: `${DANGER}0C`, border: `1px solid ${DANGER}25` }}>
@@ -326,7 +381,7 @@ export default function TRMPage({ onClose }: Props) {
           </div>
         )}
 
-        {/* ── Conversion quick-ref ──────────────────────────────────────── */}
+        {/* ── Conversion quick-ref ─────────────────────────────────────────── */}
         {quote && (
           <div className="rounded-2xl overflow-hidden"
             style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -335,8 +390,7 @@ export default function TRMPage({ onClose }: Props) {
                 style={{ color: "rgba(255,255,255,0.28)" }}>Conversión rápida</p>
             </div>
             {[1, 10, 100, 500, 1000, 5000, 10000].map((usd, i, arr) => (
-              <div key={usd}
-                className="flex items-center justify-between px-4 py-3"
+              <div key={usd} className="flex items-center justify-between px-4 py-3"
                 style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none" }}>
                 <span className="text-sm font-mono font-semibold text-white">${usd.toLocaleString()} USD</span>
                 <span className="text-sm font-mono font-semibold" style={{ color: GREEN }}>
@@ -353,23 +407,22 @@ export default function TRMPage({ onClose }: Props) {
       {/* ── Status bar ───────────────────────────────────────────────────────── */}
       <div className="px-4 py-2.5 flex items-center gap-2 shrink-0"
         style={{ borderTop: `1px solid ${BORDER}` }}>
-        {refreshing ? (
-          <>
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                style={{ background: AMBER }} />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full" style={{ background: AMBER }} />
-            </span>
-            <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.25)" }}>Actualizando precio…</p>
-          </>
-        ) : quote ? (
-          <>
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: GREEN }} />
-            <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.25)" }}>
-              Fuente: twelvedata.com · Próxima actualización en {countdown}s
-            </p>
-          </>
-        ) : null}
+        {wsStatus === "live" ? (
+          /* Pulsing dot when connected live */
+          <span className="relative flex h-1.5 w-1.5 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60"
+              style={{ background: GREEN }} />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full" style={{ background: GREEN }} />
+          </span>
+        ) : (
+          <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: statusDot }} />
+        )}
+        <p className="text-[9px]" style={{ color: "rgba(255,255,255,0.25)" }}>{statusLabel}</p>
+
+        {/* Refreshing overlay */}
+        {refreshing && (
+          <p className="ml-auto text-[9px]" style={{ color: AMBER }}>Actualizando cierre…</p>
+        )}
       </div>
     </div>
   );
