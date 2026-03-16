@@ -309,8 +309,9 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
   // TRX: fee is ~1 TRX for bandwidth, reserved from balance.
 
   const validateSend = () => {
-    if (!sendTo.startsWith("T") || sendTo.length < 30) {
-      toast.error("Dirección TRON inválida."); return false;
+    const addr = sendTo.trim();
+    if (!addr.startsWith("T") || addr.length !== 34 || addr.includes("...")) {
+      toast.error("Dirección TRON inválida"); return false;
     }
     const amt = parseFloat(sendAmt.replace(/,/g, "."));
     if (!amt || amt <= 0) { toast.error("Monto inválido."); return false; }
@@ -894,7 +895,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                     type="text"
                     placeholder="T..."
                     value={sendTo}
-                    onChange={e => setSendTo(e.target.value)}
+                    onChange={e => setSendTo(e.target.value.trim())}
                     className="w-full rounded-2xl px-4 py-3.5 pr-12 text-sm text-white outline-none font-mono"
                     style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}` }}
                   />
@@ -1080,8 +1081,8 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
         onScanSuccess={(raw: string) => {
           // Strip optional "tron:" URI prefix
           const text = raw.replace(/^tron:/i, "").trim();
-          if (!text.startsWith("T") || text.length !== 34) {
-            toast.error("Dirección TRON no válida");
+          if (!text.startsWith("T") || text.length !== 34 || text.includes("...")) {
+            toast.error("Dirección TRON inválida");
             return;
           }
           setSendTo(text);
