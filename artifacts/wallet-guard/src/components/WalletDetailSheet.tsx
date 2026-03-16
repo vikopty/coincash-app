@@ -117,7 +117,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
 
   // Send state
   const [sendStep, setSendStep]   = useState<SendStep>("form");
-  const [sendToken, setSendToken] = useState<Token>("TRX");
+  const [sendToken, setSendToken] = useState<Token>("USDT");
   const [sendTo, setSendTo]       = useState("");
   const [sendAmt, setSendAmt]     = useState("");
   const [sendLoading, setSendLoading] = useState(false);
@@ -835,7 +835,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                 {/* Token selector */}
                 <div className="flex gap-1 rounded-2xl p-1 mb-4"
                   style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}` }}>
-                  {(["TRX", "USDT"] as Token[]).map(t => (
+                  {(["USDT", "TRX"] as Token[]).map(t => (
                     <button key={t} onClick={() => { setSendToken(t); setSendAmt(""); }}
                       className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-all"
                       style={{ background: sendToken === t ? (t === "TRX" ? "#FF2D55" : TEAL) : "transparent",
