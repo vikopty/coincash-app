@@ -366,6 +366,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
       // Refresh balances + history after a successful send
       setTimeout(() => loadWalletData(), 3000);
     } catch (e: any) {
+      console.error("[send] error:", e);
       toast.error(e?.message ?? "Error al enviar la transacción.");
       setSendStep("confirm");
     } finally {

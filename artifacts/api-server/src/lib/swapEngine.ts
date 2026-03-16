@@ -5,9 +5,13 @@
 //       → relayer sends to FF deposit address → FF delivers to user wallet.
 
 import { createHash } from "node:crypto";
-import { sign as secp256k1Sign } from "@noble/secp256k1";
+import { sign as secp256k1Sign, hashes as secp256k1Hashes } from "@noble/secp256k1";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { hmac } from "@noble/hashes/hmac.js";
 import { ffGetPrice, ffCreateOrder, isFFConfigured } from "./fixedFloat.js";
 import { logSwapOrder, updateSwapOrderTxIds } from "./db.js";
+secp256k1Hashes.sha256 = sha256;
+secp256k1Hashes.hmacSha256 = (key: Uint8Array, ...msgs: Uint8Array[]) => hmac(sha256, key, ...msgs);
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const TRON_GRID       = "https://api.trongrid.io";
@@ -118,8 +122,10 @@ async function tgFetch(path: string, init: RequestInit = {}): Promise<Response> 
 function signTx(tx: any, privKeyHex: string): any {
   const txHashBytes = hexToBytes(tx.txID);
   const privBytes   = hexToBytes(privKeyHex);
-  const sig = secp256k1Sign(txHashBytes, privBytes, { lowS: false });
-  return { ...tx, signature: [sig.toCompactHex() + sig.recovery.toString(16).padStart(2, "0")] };
+  const sigRec = secp256k1Sign(txHashBytes, privBytes, { lowS: false, prehash: false, format: 'recovered' });
+  const sigHex = Array.from(sigRec.slice(1)).map((b: number) => b.toString(16).padStart(2, '0')).join('') +
+    (sigRec[0] + 27).toString(16).padStart(2, '0');
+  return { ...tx, signature: [sigHex] };
 }
 
 async function broadcastTx(signedTx: any): Promise<{ result: boolean; txID: string; message?: string }> {

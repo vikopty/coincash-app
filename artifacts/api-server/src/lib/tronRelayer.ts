@@ -22,6 +22,25 @@ export const SERVICE_FEE_USDT = 1;
 
 console.log("[tronRelayer] TronGrid API key:", API_KEY ? `✓ loaded (${API_KEY.slice(0, 8)}…)` : "✗ MISSING");
 
+// ── Hex error decoder — TronGrid returns errors as hex-encoded UTF-8 ──────────
+function decodeHexMessage(raw: string): string {
+  if (!raw) return "Transacción rechazada por la red TRON.";
+  let text = raw;
+  if (/^[0-9a-fA-F]{2,}$/.test(raw) && raw.length % 2 === 0) {
+    try { text = Buffer.from(raw, "hex").toString("utf8").replace(/\0/g, "").trim(); } catch {}
+  }
+  const lo = text.toLowerCase();
+  if (lo.includes("signature") || lo.includes("sign"))       return "Error firmando la transacción.";
+  if (lo.includes("invalid address"))                         return "Dirección TRON inválida.";
+  if (lo.includes("insufficient") || lo.includes("balance")) return "Fondos insuficientes.";
+  if (lo.includes("expired") || lo.includes("tapos"))        return "Transacción expirada. Intenta de nuevo.";
+  if (lo.includes("bandwidth"))                               return "Sin suficiente ancho de banda.";
+  if (lo.includes("contract") || lo.includes("execution"))   return "Error en el contrato inteligente.";
+  if (lo.includes("duplicate") || lo.includes("already"))    return "Transacción duplicada.";
+  if (text !== raw && /^[\x20-\x7E]{3,}$/.test(text))       return text;
+  return "Transacción rechazada por la red TRON.";
+}
+
 // ── Rate limiter (shared, 120ms gap) ──────────────────────────────────────────
 let _next = 0;
 async function rateWait(): Promise<void> {
@@ -269,7 +288,9 @@ export async function relayUSDTTransfer(
   const result = await broadcastTx(signedTx);
 
   if (!result.result) {
-    throw new Error(result.message ?? "La red TRON rechazó la transacción.");
+    const rawMsg = result.message ?? "";
+    console.error("[relay] broadcast rejected:", rawMsg);
+    throw new Error(decodeHexMessage(rawMsg));
   }
 
   console.log(`[relay] Main tx OK — txID: ${signedTx.txID}, feeMode: ${feeMode}`);

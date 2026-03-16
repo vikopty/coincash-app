@@ -129,6 +129,29 @@ function toSun(amount: number): number {
   return Math.trunc(Math.round(n * 1_000_000));
 }
 
+// ── Hex error decoder — TronGrid returns errors as hex-encoded UTF-8 ──────────
+function decodeHexError(raw: string): string {
+  if (!raw) return "Transacción rechazada por la red TRON.";
+  let text = raw;
+  if (/^[0-9a-fA-F]{2,}$/.test(raw) && raw.length % 2 === 0) {
+    try {
+      const bytes = new Uint8Array(raw.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
+      text = new TextDecoder().decode(bytes).replace(/\0/g, "").trim();
+    } catch { /* keep original */ }
+  }
+  const lo = text.toLowerCase();
+  if (lo.includes("signature") || lo.includes("sign"))       return "Error firmando la transacción.";
+  if (lo.includes("invalid address"))                         return "Dirección TRON inválida.";
+  if (lo.includes("insufficient") || lo.includes("balance")) return "Fondos insuficientes.";
+  if (lo.includes("expired") || lo.includes("tapos"))        return "Transacción expirada. Intenta de nuevo.";
+  if (lo.includes("bandwidth"))                               return "Sin suficiente ancho de banda.";
+  if (lo.includes("contract") || lo.includes("execution"))   return "Error en el contrato inteligente.";
+  if (lo.includes("duplicate") || lo.includes("already"))    return "Transacción duplicada.";
+  // If we decoded something readable, use it; otherwise generic fallback
+  if (text !== raw && /^[\x20-\x7E]{3,}$/.test(text))       return text;
+  return "Transacción rechazada por la red TRON.";
+}
+
 // ── Base58 ────────────────────────────────────────────────────────────────────
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -406,7 +429,11 @@ async function broadcastSigned(tx: any, privKeyHex: string): Promise<string> {
   });
   if (!res.ok) throw new Error(`Broadcast error ${res.status}`);
   const result = await res.json();
-  if (!result.result) throw new Error(result.message ?? "Transacción rechazada por la red.");
+  if (!result.result) {
+    const rawMsg = result.message ?? "";
+    console.error("[tronApi] broadcast rejected:", rawMsg);
+    throw new Error(decodeHexError(rawMsg));
+  }
   return tx.txID;
 }
 
