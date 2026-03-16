@@ -92,7 +92,7 @@ function MainApp() {
           />
         </div>
         <div style={{ display: tab === "chat"       ? "block" : "none" }}>
-          <ChatPage />
+          <ChatPage wallets={wallets} />
         </div>
         <div style={{ display: tab === "settings"   ? "block" : "none" }}>
           <SettingsPage />

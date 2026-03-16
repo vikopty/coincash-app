@@ -4,6 +4,8 @@ import { Send, MessageCircle } from "lucide-react";
 const API = "/api-server/api";
 const SUPPORT_ID = "CC-SUPPORT";
 
+interface WalletEntry { address: string; name?: string; }
+
 interface ChatMsg {
   id:           number;
   senderCcId:   string;
@@ -16,14 +18,9 @@ function fmt(ts: Date | string): string {
   return new Date(ts).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
 }
 
-function getFirstWalletAddress(): string | null {
-  try {
-    const wallets = JSON.parse(localStorage.getItem("wg_wallets") || "[]");
-    return wallets[0]?.address ?? null;
-  } catch { return null; }
-}
+interface ChatPageProps { wallets?: WalletEntry[]; }
 
-const ChatPage = () => {
+const ChatPage = ({ wallets = [] }: ChatPageProps) => {
   const [myCcId,    setMyCcId]    = useState<string | null>(null);
   const [ccLoading, setCcLoading] = useState(true);
   const [messages,  setMessages]  = useState<ChatMsg[]>([]);
@@ -31,30 +28,42 @@ const ChatPage = () => {
   const [sending,   setSending]   = useState(false);
   const bottomRef                 = useRef<HTMLDivElement>(null);
 
-  // ── Resolve CoinCash ID from first saved wallet ──
+  // ── Resolve CoinCash ID from the first wallet in the live wallet list ──
+  const firstAddress = wallets[0]?.address ?? null;
+
   useEffect(() => {
+    // Reset state whenever the active wallet changes
+    setMyCcId(null);
+    setMessages([]);
+    setCcLoading(true);
+
+    if (!firstAddress) {
+      setCcLoading(false);
+      return;
+    }
+
+    let cancelled = false;
     async function init() {
-      const address = getFirstWalletAddress();
-      if (!address) { setCcLoading(false); return; }
       try {
         const res  = await fetch(`${API}/users/lookup`, {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ walletAddress: address }),
+          body:    JSON.stringify({ walletAddress: firstAddress }),
         });
         const data = await res.json();
-        if (data.coincashId) {
+        if (!cancelled && data.coincashId) {
           setMyCcId(data.coincashId);
           await loadHistory(data.coincashId);
         }
       } catch (err) {
         console.error("[chat] CoinCash ID lookup failed:", err);
       } finally {
-        setCcLoading(false);
+        if (!cancelled) setCcLoading(false);
       }
     }
     init();
-  }, []);
+    return () => { cancelled = true; };
+  }, [firstAddress]); // re-run whenever the first wallet changes
 
   // Auto-scroll on new messages
   useEffect(() => {
