@@ -591,7 +591,7 @@ export async function sendTRX(
   from: string, to: string, amountTrx: number, privKeyHex: string
 ): Promise<string> {
   if (amountTrx <= 0) throw new Error("El monto debe ser mayor a 0.");
-  if (!to.startsWith("T") || to.length < 30) throw new Error("Dirección destino inválida.");
+  if (!isValidTronAddr(to)) throw new Error("Dirección TRON inválida.");
 
   const fromHex   = tronAddrToHex(from);
   const toHex     = tronAddrToHex(to);
@@ -614,7 +614,7 @@ export async function sendUSDT(
   from: string, to: string, amountUsdt: number, privKeyHex: string
 ): Promise<string> {
   if (amountUsdt <= 0) throw new Error("El monto debe ser mayor a 0.");
-  if (!to.startsWith("T") || to.length < 30) throw new Error("Dirección destino inválida.");
+  if (!isValidTronAddr(to)) throw new Error("Dirección TRON inválida.");
 
   const fromHex     = tronAddrToHex(from);
   const contractHex = tronAddrToHex(USDT_CONTRACT);
@@ -659,9 +659,8 @@ async function buildAndSignUSDTTx(
 
   // ── Task 1 — log all parameters before any TronGrid call ──────────────────
   console.log("Wallet:",    from);               // source of USDT (user's wallet)
-  console.log("Recipient:", from);               // output destination = same wallet
-  console.log("Router:",    to);                 // relayer that receives & swaps
-  console.log("Token:",     USDT_CONTRACT);      // TRC20 USDT contract address
+  console.log("Recipient:", to);                 // output destination
+  console.log("Contract:",  USDT_CONTRACT);      // TRC20 USDT contract address
   console.log("Amount:",    amtSun);             // integer SUN value (no decimals)
 
   // ── Task 2/4 — validate address format before execution ───────────────────
@@ -962,7 +961,7 @@ export async function relayUSDTTransfer(
   treasuryAddress: string,         // from relay status — empty string = skip fee tx
 ): Promise<RelayResult> {
   if (amountUsdt <= 0) throw new Error("El monto debe ser mayor a 0.");
-  if (!to.startsWith("T") || to.length < 30) throw new Error("Dirección destino inválida.");
+  if (!isValidTronAddr(to)) throw new Error("Dirección TRON inválida.");
 
   const hasTreasury = treasuryAddress.startsWith("T") && treasuryAddress.length >= 30;
 
