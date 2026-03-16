@@ -788,9 +788,9 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                       ]
                     : [
                         ["Monto a enviar",     `${parseFloat(sendAmt).toFixed(2)} USDT`,                 "white"],
-                        ["Tarifa CoinCash",    `${SERVICE_FEE_USDT.toFixed(2)} USDT (servicio)`,          AMBER],
-                        ["Tarifa de red",      "Cubierta por CoinCash ✓",                                GREEN],
-                        ["Total a descontar",  `${(parseFloat(sendAmt) + SERVICE_FEE_USDT).toFixed(2)} USDT`, BLUE],
+                        ["Tarifa CoinCash",    `${SERVICE_FEE_USDT.toFixed(2)} USDT`,                     AMBER],
+                        ["Tarifa de red",      "",                                                       GREEN],
+                        ["Total",              `${(parseFloat(sendAmt) + SERVICE_FEE_USDT).toFixed(2)} USDT`, BLUE],
                         ["Destinatario recibe", `${parseFloat(sendAmt).toFixed(2)} USDT`,                GREEN],
                         ["Hacia",              short(sendTo),                                            "white"],
                       ]
@@ -798,7 +798,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                     <div key={label} className="flex items-start justify-between px-4 py-3"
                       style={{
                         borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : "none",
-                        background: label === "Total a descontar" ? `${BLUE}08` : "transparent",
+                        background: label === "Total" ? `${BLUE}08` : "transparent",
                       }}>
                       <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</span>
                       <span className="text-xs font-semibold text-right max-w-[55%] break-all"
@@ -944,7 +944,6 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                         Tarifa de red
                       </span>
                       <span className="text-[11px] font-bold" style={{ color: GREEN }}>
-                        Cubierta por CoinCash ✓
                       </span>
                     </div>
 
@@ -952,7 +951,7 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                     <div className="flex items-center justify-between px-4 py-3"
                       style={{ background: `${BLUE}0A` }}>
                       <span className="text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.6)" }}>
-                        Total a descontar
+                        Total
                       </span>
                       {parseFloat(sendAmt) > 0 ? (
                         <span className="text-[11px] font-bold" style={{ color: BLUE }}>
