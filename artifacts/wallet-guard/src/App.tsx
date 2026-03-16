@@ -38,9 +38,17 @@ function MainApp() {
   // Keep wallets in sync with localStorage changes (user adds/removes wallets)
   useEffect(() => {
     const sync = () => setWallets(loadWallets());
+    // wg:wallets-changed fires in the same tab whenever WalletsPage saves
+    window.addEventListener("wg:wallets-changed", sync);
+    // storage fires for cross-tab changes
     window.addEventListener("storage", sync);
+    // Fallback poll every 5 s to catch anything missed
     const t = setInterval(sync, 5_000);
-    return () => { window.removeEventListener("storage", sync); clearInterval(t); };
+    return () => {
+      window.removeEventListener("wg:wallets-changed", sync);
+      window.removeEventListener("storage", sync);
+      clearInterval(t);
+    };
   }, []);
 
   const handleScanWallet = (address: string) => {

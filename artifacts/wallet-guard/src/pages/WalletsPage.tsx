@@ -32,7 +32,10 @@ export interface SavedWallet {
 
 const STORAGE_KEY = "wg_wallets";
 function loadWallets(): SavedWallet[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]"); } catch { return []; } }
-function saveWallets(w: SavedWallet[]) { localStorage.setItem(STORAGE_KEY, JSON.stringify(w)); }
+function saveWallets(w: SavedWallet[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(w));
+  window.dispatchEvent(new CustomEvent("wg:wallets-changed"));
+}
 
 const avatarColor = (t: SavedWallet["type"]) => t==="created"?PURPLE:t==="imported"?BLUE:GREEN;
 const typeBadge   = (t: SavedWallet["type"]) =>

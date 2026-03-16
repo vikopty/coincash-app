@@ -28,8 +28,14 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
   const [sending,   setSending]   = useState(false);
   const bottomRef                 = useRef<HTMLDivElement>(null);
 
-  // ── Resolve CoinCash ID from the first wallet in the live wallet list ──
-  const firstAddress = wallets[0]?.address ?? null;
+  // ── Resolve first wallet address — prop (live) OR localStorage (fallback) ──
+  const firstAddress = (() => {
+    if (wallets.length > 0) return wallets[0].address;
+    try {
+      const stored: WalletEntry[] = JSON.parse(localStorage.getItem("wg_wallets") || "[]");
+      return stored[0]?.address ?? null;
+    } catch { return null; }
+  })();
 
   useEffect(() => {
     // Reset state whenever the active wallet changes
