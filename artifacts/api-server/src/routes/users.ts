@@ -4,7 +4,7 @@
 // GET  /api/users/:ccId   — fetch user record by CoinCash ID
 
 import { Router } from "express";
-import { getOrCreateUser, getUserByCoinCashId } from "../lib/db";
+import { getOrCreateUser, getOrCreateUserWithCcId, getUserByCoinCashId } from "../lib/db";
 
 const router = Router();
 
@@ -14,12 +14,16 @@ const router = Router();
  * Returns the CoinCash ID for the given wallet, creating one if needed.
  */
 router.post("/users/lookup", async (req, res) => {
-  const { walletAddress } = req.body ?? {};
-  if (!walletAddress || typeof walletAddress !== "string" || walletAddress.trim().length < 10) {
+  const { walletAddress, coincashId } = req.body ?? {};
+  if (!walletAddress || typeof walletAddress !== "string" || walletAddress.trim().length < 4) {
     return res.status(400).json({ error: "walletAddress is required" });
   }
   try {
-    const user = await getOrCreateUser(walletAddress.trim());
+    // If the client already generated a local CC-ID, store that exact ID in the DB
+    const hasLocalId = coincashId && typeof coincashId === "string" && /^CC-\d{6}$/.test(coincashId.trim());
+    const user = hasLocalId
+      ? await getOrCreateUserWithCcId(walletAddress.trim(), coincashId.trim())
+      : await getOrCreateUser(walletAddress.trim());
     return res.json({
       coincashId:    user.coincash_id,
       walletAddress: user.wallet_address,

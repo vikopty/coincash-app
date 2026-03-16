@@ -213,10 +213,12 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
       } catch { /* ignore */ }
       return getOrCreateDeviceId();
     })();
+    // Pass the locally-generated CC-ID so the backend stores THIS exact ID in the DB
+    // This makes the ID discoverable when other users try to add this contact
     fetch(`${API}/users/lookup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ walletAddress: identifier }),
+      body: JSON.stringify({ walletAddress: identifier, coincashId: ccId }),
     }).catch(() => { /* backend unavailable — chat still works */ });
   }, []); // Run once on mount
 

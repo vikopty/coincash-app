@@ -148,6 +148,56 @@ export async function getOrCreateUser(walletAddress: string): Promise<UserRecord
   throw new Error("Failed to generate a unique CoinCash ID after 5 attempts");
 }
 
+/**
+ * Get or create a user, but use the caller-supplied coincashId instead of
+ * generating a random one.  Used when the client already generated a local ID.
+ *
+ * Priority:
+ *   1. If coincashId already exists in DB → return that record (collision: shared ID)
+ *   2. If walletAddress already exists in DB → return that record
+ *   3. Insert with the provided coincashId
+ */
+export async function getOrCreateUserWithCcId(
+  walletAddress: string,
+  coincashId:    string,
+): Promise<UserRecord> {
+  // 1. CC-ID already registered?
+  const byCcId = await pool.query<UserRecord>(
+    `SELECT id, coincash_id, wallet_address, created_at
+       FROM users WHERE coincash_id = $1 LIMIT 1`,
+    [coincashId],
+  );
+  if (byCcId.rows.length > 0) return byCcId.rows[0];
+
+  // 2. Wallet already registered under a different CC-ID?
+  const byWallet = await pool.query<UserRecord>(
+    `SELECT id, coincash_id, wallet_address, created_at
+       FROM users WHERE wallet_address = $1 LIMIT 1`,
+    [walletAddress],
+  );
+  if (byWallet.rows.length > 0) return byWallet.rows[0];
+
+  // 3. Insert with the locally-generated CC-ID
+  const res = await pool.query<UserRecord>(
+    `INSERT INTO users (coincash_id, wallet_address)
+     VALUES ($1, $2)
+     ON CONFLICT (coincash_id) DO NOTHING
+     RETURNING id, coincash_id, wallet_address, created_at`,
+    [coincashId, walletAddress],
+  );
+  if (res.rows.length > 0) {
+    console.log(`[db] New user registered: ${coincashId} → ${walletAddress}`);
+    return res.rows[0];
+  }
+  // Race condition — another insert won; fetch the winner
+  const winner = await pool.query<UserRecord>(
+    `SELECT id, coincash_id, wallet_address, created_at
+       FROM users WHERE coincash_id = $1`,
+    [coincashId],
+  );
+  return winner.rows[0];
+}
+
 /** Look up a user by their CoinCash ID. */
 export async function getUserByCoinCashId(ccId: string): Promise<UserRecord | null> {
   const res = await pool.query<UserRecord>(
