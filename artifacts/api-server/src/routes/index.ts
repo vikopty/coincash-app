@@ -6,6 +6,7 @@ import bitraceProxyRouter from "./bitraceProxy";
 import riskAnalysisRouter from "./riskAnalysis";
 import bitraceBlacklistRouter from "./bitraceBlacklist";
 import swapRouter from "./swap";
+import usersRouter from "./users";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(bitraceProxyRouter);
 router.use(riskAnalysisRouter);
 router.use(bitraceBlacklistRouter);
 router.use(swapRouter);
+router.use(usersRouter);
 
 export default router;
