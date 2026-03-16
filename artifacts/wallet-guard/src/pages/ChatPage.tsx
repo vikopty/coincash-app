@@ -204,21 +204,11 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
     setMyCcId(ccId);
     setCcLoading(false);
 
-    // Background sync to DB (fire-and-forget — failure is non-fatal)
-    const identifier = (() => {
-      if (wallets.length > 0) return wallets[0].address;
-      try {
-        const stored: WalletEntry[] = JSON.parse(localStorage.getItem("wg_wallets") || "[]");
-        if (stored[0]?.address) return stored[0].address;
-      } catch { /* ignore */ }
-      return getOrCreateDeviceId();
-    })();
-    // Pass the locally-generated CC-ID so the backend stores THIS exact ID in the DB
-    // This makes the ID discoverable when other users try to add this contact
-    fetch(`${API}/users/lookup`, {
+    // Register in chat_users so other users can find this CC-ID (fire-and-forget)
+    fetch(`${API}/chat/user`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ walletAddress: identifier, coincashId: ccId }),
+      body: JSON.stringify({ coincashId: ccId }),
     }).catch(() => { /* backend unavailable — chat still works */ });
   }, []); // Run once on mount
 
@@ -318,14 +308,16 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
     if (contacts.some(c => c.ccId === ccId)) { setAddError("Contacto ya existe"); return false; }
     setAddLoading(true); setAddError("");
     try {
-      const res = await fetch(`${API}/users/${ccId}`);
-      if (res.status === 404) { setAddError("CoinCash ID no encontrado"); return false; }
+      const res = await fetch(`${API}/chat/user/${ccId}`);
+      if (res.status === 404) { setAddError("Usuario no encontrado"); return false; }
       if (!res.ok)            { setAddError("Error al verificar el ID"); return false; }
       const data = await res.json();
       persistContact({ ccId: data.coincashId, name: data.coincashId, addedAt: new Date().toISOString() });
       return true;
-    } catch { setAddError("Error de conexión"); return false; }
-    finally { setAddLoading(false); }
+    } catch {
+      setAddError("Error de conexión. Verifica tu red.");
+      return false;
+    } finally { setAddLoading(false); }
   }
 
   async function addContactManual() {
@@ -340,12 +332,13 @@ const ChatPage = ({ wallets = [] }: ChatPageProps) => {
       if (contacts.some(c => c.ccId === ccId)) { toast.info("Contacto ya existe"); return; }
       if (ccId === myCcId) { toast.error("No puedes agregarte a ti mismo"); return; }
       try {
-        const res = await fetch(`${API}/users/${ccId}`);
-        if (!res.ok) { toast.error("CoinCash ID no encontrado"); return; }
+        const res = await fetch(`${API}/chat/user/${ccId}`);
+        if (res.status === 404) { toast.error("Usuario no encontrado"); return; }
+        if (!res.ok) { toast.error("Error al verificar el ID"); return; }
         const data = await res.json();
         persistContact({ ccId: data.coincashId, name: data.coincashId, addedAt: new Date().toISOString() });
         toast.success(`Contacto ${data.coincashId} agregado`);
-      } catch { toast.error("Error de conexión"); }
+      } catch { toast.error("Error de conexión. Verifica tu red."); }
     }, 300);
   }
 

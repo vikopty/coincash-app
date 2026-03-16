@@ -1,13 +1,59 @@
 // @ts-nocheck
-// Chat message routes
+// Chat routes
+// POST /api/chat/user                  — register a CoinCash ID in chat_users
+// GET  /api/chat/user/:coincash_id     — look up a chat user by CoinCash ID
 // POST /api/chat/messages              — send a message
 // GET  /api/chat/messages?user=CC-XXX  — fetch messages for a user
 
 import { Router } from "express";
-import { saveChatMessage, getChatMessages, getConversation } from "../lib/db";
+import {
+  saveChatMessage, getChatMessages, getConversation,
+  getOrCreateChatUser, getChatUserById,
+} from "../lib/db";
 
 const SUPPORT_ID = "CC-SUPPORT";
-const router = Router();
+const CC_RE      = /^CC-\d{6}$/;
+const router     = Router();
+
+/**
+ * POST /api/chat/user
+ * Body: { coincashId: "CC-XXXXXX" }
+ * Registers the CC-ID in chat_users (upsert). Called fire-and-forget when
+ * the user opens the chat for the first time.
+ */
+router.post("/chat/user", async (req, res) => {
+  const { coincashId } = req.body ?? {};
+  if (!coincashId || !CC_RE.test(coincashId)) {
+    return res.status(400).json({ error: "coincashId must match CC-XXXXXX" });
+  }
+  try {
+    const user = await getOrCreateChatUser(coincashId);
+    console.log(`[chat-users] registered: ${coincashId}`);
+    return res.json({ coincashId: user.coincash_id, createdAt: user.created_at });
+  } catch (err: any) {
+    console.error("[chat-users] register error:", err?.message);
+    return res.status(500).json({ error: "Failed to register user" });
+  }
+});
+
+/**
+ * GET /api/chat/user/:coincash_id
+ * Returns the chat user record if found, 404 if not.
+ */
+router.get("/chat/user/:coincash_id", async (req, res) => {
+  const ccId = req.params.coincash_id;
+  if (!CC_RE.test(ccId)) {
+    return res.status(400).json({ error: "Invalid CoinCash ID format. Use CC-XXXXXX" });
+  }
+  try {
+    const user = await getChatUserById(ccId);
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+    return res.json({ coincashId: user.coincash_id, createdAt: user.created_at });
+  } catch (err: any) {
+    console.error("[chat-users] lookup error:", err?.message);
+    return res.status(500).json({ error: "Failed to look up user" });
+  }
+});
 
 /**
  * POST /api/chat/messages

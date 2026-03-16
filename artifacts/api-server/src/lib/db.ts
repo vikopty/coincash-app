@@ -222,6 +222,53 @@ export async function getUserByWallet(walletAddress: string): Promise<UserRecord
   return res.rows[0] ?? null;
 }
 
+// ── Chat users ────────────────────────────────────────────────────────────────
+
+export interface ChatUserRecord {
+  id:          number;
+  coincash_id: string;
+  created_at:  Date;
+}
+
+/** Create the chat_users table if it doesn't already exist. */
+export async function ensureChatUsersTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chat_users (
+      id          SERIAL    PRIMARY KEY,
+      coincash_id TEXT      UNIQUE NOT NULL,
+      created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  console.log("[db] chat_users table ready");
+}
+
+/**
+ * Register a CoinCash ID in chat_users (upsert — safe to call every time the
+ * chat opens).  Returns the stored record.
+ */
+export async function getOrCreateChatUser(coincashId: string): Promise<ChatUserRecord> {
+  const res = await pool.query<ChatUserRecord>(
+    `INSERT INTO chat_users (coincash_id)
+     VALUES ($1)
+     ON CONFLICT (coincash_id) DO UPDATE SET coincash_id = EXCLUDED.coincash_id
+     RETURNING id, coincash_id, created_at`,
+    [coincashId],
+  );
+  return res.rows[0];
+}
+
+/** Look up a chat user by CoinCash ID. Returns null if not found. */
+export async function getChatUserById(coincashId: string): Promise<ChatUserRecord | null> {
+  const res = await pool.query<ChatUserRecord>(
+    `SELECT id, coincash_id, created_at
+       FROM chat_users
+      WHERE coincash_id = $1
+      LIMIT 1`,
+    [coincashId],
+  );
+  return res.rows[0] ?? null;
+}
+
 // ── Chat messages ─────────────────────────────────────────────────────────────
 
 export interface ChatMessage {
