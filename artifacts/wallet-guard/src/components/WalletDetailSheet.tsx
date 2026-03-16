@@ -108,6 +108,8 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
   const offlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // ts of the last successful live fetch (shown as "Actualizado ahora / Hace X min")
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  // USD → COP live rate (null = not yet loaded or failed)
+  const [copRate, setCopRate] = useState<number | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [copied, setCopied]       = useState(false);
 
@@ -295,6 +297,26 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
 
     return () => { cancelled = true; clearInterval(id); };
   }, [wallet.address]);
+
+  // ── USD → COP rate poller (60-second refresh) ─────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCOP = async () => {
+      try {
+        const res = await fetch(
+          "https://api.exchangerate.host/latest?base=USD&symbols=COP",
+          { signal: AbortSignal.timeout(8_000) }
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const rate = data?.rates?.COP;
+        if (!cancelled && typeof rate === "number" && rate > 0) setCopRate(rate);
+      } catch { /* non-fatal — hide COP line silently */ }
+    };
+    fetchCOP();
+    const id = setInterval(fetchCOP, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
 
   // ── Load fee estimate + live account resources when USDT send view opens ───
   useEffect(() => {
@@ -589,6 +611,11 @@ export default function WalletDetailSheet({ wallet, onClose, onRename, onNavigat
                       {info
                         ? <p className="text-xl font-bold text-white">{fmtAmt(info.usdtBalance, 2)}</p>
                         : <Skeleton w="w-28" h="h-6" />}
+                      {info && copRate !== null && (
+                        <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.38)" }}>
+                          ≈ {Math.round(info.usdtBalance * copRate).toLocaleString("es-CO")} COP
+                        </p>
+                      )}
                     </div>
                   </div>
                   <p className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.3)" }}>USDT</p>
