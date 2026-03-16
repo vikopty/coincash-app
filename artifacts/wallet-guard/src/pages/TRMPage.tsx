@@ -67,44 +67,35 @@ function Skeleton({ w, h = 4 }: { w: number; h?: number }) {
   );
 }
 
-// ── Change chip ───────────────────────────────────────────────────────────────
-function ChangeChip({ pct }: { pct: number }) {
-  const up    = pct > 0.005;
-  const down  = pct < -0.005;
-  const color = up ? GREEN : down ? DANGER : BLUE;
-  const Icon  = up ? TrendingUp : down ? TrendingDown : Minus;
-  const label = Math.abs(pct) < 0.005
-    ? "Sin cambio"
-    : `${up ? "+" : ""}${pct.toFixed(3)}%`;
-
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold"
-      style={{ background: `${color}18`, color, border: `1px solid ${color}30` }}>
-      <Icon className="h-4 w-4" />
-      {label}
-    </span>
-  );
-}
-
-// ── Stat card ─────────────────────────────────────────────────────────────────
-function StatCard({
-  label, value, sub, color = "rgba(255,255,255,0.9)", accent,
+// ── Metric card ───────────────────────────────────────────────────────────────
+function MetricCard({
+  label, value, sub, color, accent, icon: Icon,
 }: {
-  label: string; value: string; sub?: string;
-  color?: string; accent?: string;
+  label: string;
+  value: string;
+  sub?: string;
+  color: string;
+  accent?: string;
+  icon?: React.ElementType;
 }) {
+  const border = accent ?? BORDER;
   return (
-    <div className="flex-1 flex flex-col gap-1.5 rounded-2xl p-4"
+    <div
+      className="flex flex-col gap-2 rounded-2xl p-4"
       style={{
         background: CARD,
-        border: `1px solid ${accent ? `${accent}30` : BORDER}`,
+        border: `1px solid ${border}`,
         boxShadow: SHADOW,
-      }}>
-      <p className="text-[9px] font-bold uppercase tracking-widest"
-        style={{ color: "rgba(255,255,255,0.28)" }}>{label}</p>
+      }}
+    >
+      <div className="flex items-center gap-1.5">
+        {Icon && <Icon className="h-3 w-3 shrink-0" style={{ color: "rgba(255,255,255,0.3)" }} />}
+        <p className="text-[9px] font-bold uppercase tracking-widest"
+          style={{ color: "rgba(255,255,255,0.28)" }}>{label}</p>
+      </div>
       <p className="text-base font-extrabold leading-tight tracking-tight" style={{ color }}>{value}</p>
       {sub && (
-        <p className="text-[9px] font-medium" style={{ color: "rgba(255,255,255,0.28)" }}>{sub}</p>
+        <p className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>{sub}</p>
       )}
     </div>
   );
@@ -114,21 +105,18 @@ function StatCard({
 const REFRESH_SECS = 20;
 
 export default function TRMPage({ onClose }: Props) {
-  const [spot, setSpot]           = useState<number | null>(null);
-  const [prevSpot, setPrevSpot]   = useState<number | null>(null);
-  const [flash, setFlash]         = useState(false);
-  const [close, setClose]         = useState<number | null>(null);
-  const [loading, setLoading]     = useState(true);
+  const [spot, setSpot]             = useState<number | null>(null);
+  const [prevSpot, setPrevSpot]     = useState<number | null>(null);
+  const [flash, setFlash]           = useState(false);
+  const [close, setClose]           = useState<number | null>(null);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError]         = useState<string | null>(null);
-  const [countdown, setCountdown] = useState(REFRESH_SECS);
-  const countdownRef              = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Whether the close price for this session has been established
-  const closeSetRef               = useRef(false);
-  // Always-current ref to the spot price — accessible inside stale callbacks
-  const spotRef                   = useRef<number | null>(null);
+  const [error, setError]           = useState<string | null>(null);
+  const [countdown, setCountdown]   = useState(REFRESH_SECS);
+  const countdownRef                = useRef<ReturnType<typeof setInterval> | null>(null);
+  const closeSetRef                 = useRef(false);
+  const spotRef                     = useRef<number | null>(null);
 
-  // ── Load close from storage on mount ───────────────────────────────────────
   useEffect(() => {
     const stored = loadStoredClose();
     if (stored) {
@@ -137,28 +125,22 @@ export default function TRMPage({ onClose }: Props) {
     }
   }, []);
 
-  // Keep spotRef in sync so load() can read the current price without stale closure
   useEffect(() => { spotRef.current = spot; }, [spot]);
 
-  // ── Fetch live spot price ──────────────────────────────────────────────────
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     setError(null);
     try {
       const price = await fetchSpot();
-      // Capture previous tick value before overwriting
       setPrevSpot(spotRef.current);
       setSpot(price);
       setUsdCopRate(price);
-      // Trigger brief flash animation on every price update
       setFlash(true);
       setTimeout(() => setFlash(false), 700);
-      // First fetch of this session sets the close if nothing was stored
       if (!closeSetRef.current) {
         setClose(price);
         closeSetRef.current = true;
       }
-      // Always update storage so the next session has a reference close
       saveClose(price);
       setCountdown(REFRESH_SECS);
     } catch {
@@ -169,14 +151,12 @@ export default function TRMPage({ onClose }: Props) {
     }
   }, []);
 
-  // Initial load + 20s auto-refresh
   useEffect(() => {
     load();
     const t = setInterval(() => load(), REFRESH_SECS * 1000);
     return () => clearInterval(t);
   }, [load]);
 
-  // Countdown ticker — resets when spot updates
   useEffect(() => {
     if (countdownRef.current) clearInterval(countdownRef.current);
     countdownRef.current = setInterval(() => {
@@ -187,23 +167,24 @@ export default function TRMPage({ onClose }: Props) {
 
   // ── Derived values ─────────────────────────────────────────────────────────
   const change    = spot !== null && close !== null ? spot - close : null;
-  const changePct = change !== null && close ? (change / close) * 100 : null;
-  const isUp      = (changePct ?? 0) > 0.005;
+  const changePct = change !== null && close        ? (change / close) * 100 : null;
+  const isUp      = (changePct ?? 0) >  0.005;
   const isDown    = (changePct ?? 0) < -0.005;
 
-  // Tick-to-tick direction: compares current fetch vs the one before it
   const tickDir: "up" | "down" | "neutral" =
     prevSpot === null || spot === null ? "neutral"
-    : spot > prevSpot               ? "up"
-    : spot < prevSpot               ? "down"
+    : spot > prevSpot ? "up"
+    : spot < prevSpot ? "down"
     : "neutral";
-  const tickColor = tickDir === "up" ? GREEN : tickDir === "down" ? DANGER : BLUE;
 
-  // Hero uses tick color; glow uses close-based direction
-  const heroColor = loading || spot === null ? GREEN
-    : isUp ? GREEN : isDown ? DANGER : BLUE;
-  const changeColor = changePct === null ? BLUE
-    : Math.abs(changePct) < 0.005 ? BLUE : isUp ? GREEN : DANGER;
+  const tickColor   = tickDir === "up" ? GREEN : tickDir === "down" ? DANGER : BLUE;
+  const changeColor = changePct === null ? BLUE : Math.abs(changePct) < 0.005 ? BLUE : isUp ? GREEN : DANGER;
+  const heroColor   = loading || spot === null ? GREEN : isUp ? GREEN : isDown ? DANGER : BLUE;
+
+  // Color for the Cambio % metric card accent border
+  const pctAccent = changeColor === BLUE ? "rgba(59,130,246,0.30)"
+    : changeColor === GREEN ? "rgba(25,195,125,0.30)"
+    : "rgba(255,77,79,0.30)";
 
   return (
     <div className="flex flex-col"
@@ -243,11 +224,9 @@ export default function TRMPage({ onClose }: Props) {
             boxShadow: SHADOW,
           }}>
 
-          {/* Background glow */}
           <div className="absolute -top-12 -right-12 h-48 w-48 rounded-full pointer-events-none"
             style={{ background: `radial-gradient(circle, ${heroColor}22 0%, transparent 70%)` }} />
 
-          {/* Icon + label */}
           <div className="flex items-center gap-2 mb-4">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl"
               style={{ background: `${heroColor}18` }}>
@@ -256,13 +235,10 @@ export default function TRMPage({ onClose }: Props) {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest"
                 style={{ color: "rgba(255,255,255,0.35)" }}>PRECIO ACTUAL</p>
-              <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.2)" }}>
-                1 USD =
-              </p>
+              <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.2)" }}>1 USD =</p>
             </div>
           </div>
 
-          {/* Main price */}
           {loading ? (
             <div className="mb-4 flex flex-col gap-2">
               <Skeleton w={220} h={12} />
@@ -273,28 +249,18 @@ export default function TRMPage({ onClose }: Props) {
           ) : (
             <div className="mb-4">
               <div className="flex items-center gap-2 mb-0.5">
-                {/* Tick direction arrow */}
-                {tickDir === "up" && (
-                  <ArrowUp className="h-6 w-6 flex-shrink-0" style={{ color: GREEN }} />
-                )}
-                {tickDir === "down" && (
-                  <ArrowDown className="h-6 w-6 flex-shrink-0" style={{ color: DANGER }} />
-                )}
-                {/* Price — colored by tick direction, with flash glow */}
+                {tickDir === "up"   && <ArrowUp   className="h-6 w-6 shrink-0" style={{ color: GREEN }}  />}
+                {tickDir === "down" && <ArrowDown  className="h-6 w-6 shrink-0" style={{ color: DANGER }} />}
                 <span
                   className="text-4xl font-extrabold tracking-tight"
                   style={{
-                    color: loading || prevSpot === null ? "white" : tickColor,
-                    textShadow: flash && tickDir !== "neutral"
-                      ? `0 0 24px ${tickColor}90`
-                      : "none",
+                    color: prevSpot === null ? "white" : tickColor,
+                    textShadow: flash && tickDir !== "neutral" ? `0 0 24px ${tickColor}90` : "none",
                     transition: "color 0.4s ease, text-shadow 0.4s ease",
                   }}>
                   {fmtCOP(spot!)}
                 </span>
-                <span className="text-lg font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>
-                  COP
-                </span>
+                <span className="text-lg font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>COP</span>
               </div>
               <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.22)" }}>
                 {(1_000_000 / spot!).toFixed(4)} USD por millón de pesos
@@ -302,96 +268,81 @@ export default function TRMPage({ onClose }: Props) {
             </div>
           )}
 
-          {/* Change chip */}
-          {!loading && !error && changePct !== null && (
-            <ChangeChip pct={changePct} />
-          )}
+          {/* Change chip inside hero */}
+          {!loading && !error && changePct !== null && (() => {
+            const up    = changePct >  0.005;
+            const down  = changePct < -0.005;
+            const color = up ? GREEN : down ? DANGER : BLUE;
+            const Icon  = up ? TrendingUp : down ? TrendingDown : Minus;
+            const label = Math.abs(changePct) < 0.005
+              ? "Sin cambio"
+              : `${up ? "+" : ""}${changePct.toFixed(3)}%`;
+            return (
+              <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold"
+                style={{ background: `${color}18`, color, border: `1px solid ${color}30` }}>
+                <Icon className="h-4 w-4" />
+                {label}
+              </span>
+            );
+          })()}
           {loading && <Skeleton w={110} h={5} />}
         </div>
 
-        {/* ── Stat row: Cierre / Cambio ─────────────────────────────────── */}
-        <div className="flex gap-3">
-          {loading ? (
-            <>
-              <div className="flex-1 rounded-2xl p-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <Skeleton w={50} h={2} />
-                <div className="mt-2"><Skeleton w={100} h={5} /></div>
-              </div>
-              <div className="flex-1 rounded-2xl p-4" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <Skeleton w={50} h={2} />
-                <div className="mt-2"><Skeleton w={100} h={5} /></div>
-              </div>
-            </>
-          ) : error ? null : (
-            <>
-              <StatCard
-                label="Cierre"
-                value={close !== null ? `${fmtCOP(close)}` : "—"}
-                sub="USD → COP"
-                color="rgba(255,255,255,0.8)"
-              />
-              <StatCard
-                label="Cambio"
-                value={
-                  changePct !== null
-                    ? `${changePct >= 0 ? "+" : ""}${changePct.toFixed(3)}%`
-                    : "—"
-                }
-                sub={
-                  change !== null
-                    ? `${change >= 0 ? "+" : ""}${fmtCOP(change)} COP`
-                    : undefined
-                }
-                color={changeColor}
-                accent={changeColor}
-              />
-            </>
-          )}
-        </div>
-
-        {/* ── Three-column summary ──────────────────────────────────────── */}
-        {!loading && !error && spot !== null && (
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              {
-                label: "Precio actual",
-                value: `$${fmtCOP(spot, 2)}`,
-                color: prevSpot !== null ? tickColor : "rgba(255,255,255,0.9)",
-                arrow: tickDir,
-              },
-              {
-                label: "Cierre",
-                value: close !== null ? `$${fmtCOP(close, 2)}` : "—",
-                color: "rgba(255,255,255,0.55)",
-                arrow: "neutral" as const,
-              },
-              {
-                label: "Cambio",
-                value: changePct !== null
-                  ? `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`
-                  : "—",
-                color: changeColor,
-                arrow: "neutral" as const,
-              },
-            ].map(item => (
-              <div key={item.label}
-                className="flex flex-col gap-1 rounded-xl p-3"
+        {/* ── 2×2 Metric grid ──────────────────────────────────────────────── */}
+        {loading ? (
+          <div className="grid grid-cols-2 gap-3">
+            {[0,1,2,3].map(i => (
+              <div key={i} className="rounded-2xl p-4 flex flex-col gap-2"
                 style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-                <p className="text-[8px] font-bold uppercase tracking-widest"
-                  style={{ color: "rgba(255,255,255,0.22)" }}>{item.label}</p>
-                <div className="flex items-center gap-0.5">
-                  {item.arrow === "up" && (
-                    <ArrowUp className="h-2.5 w-2.5 flex-shrink-0" style={{ color: GREEN }} />
-                  )}
-                  {item.arrow === "down" && (
-                    <ArrowDown className="h-2.5 w-2.5 flex-shrink-0" style={{ color: DANGER }} />
-                  )}
-                  <p className="text-xs font-bold leading-tight" style={{ color: item.color }}>
-                    {item.value}
-                  </p>
-                </div>
+                <Skeleton w={60} h={2} />
+                <Skeleton w={100} h={5} />
               </div>
             ))}
+          </div>
+        ) : error ? null : (
+          <div className="grid grid-cols-2 gap-3">
+
+            {/* Precio actual */}
+            <MetricCard
+              label="Precio actual"
+              value={`${fmtCOP(spot!)} COP`}
+              sub="1 USD"
+              color={prevSpot !== null ? tickColor : "rgba(255,255,255,0.9)"}
+              accent={prevSpot !== null ? `${tickColor}30` : BORDER}
+              icon={tickDir === "up" ? ArrowUp : tickDir === "down" ? ArrowDown : Minus}
+            />
+
+            {/* Precio cierre */}
+            <MetricCard
+              label="Precio cierre"
+              value={close !== null ? `${fmtCOP(close)} COP` : "—"}
+              sub="Referencia"
+              color="rgba(255,255,255,0.75)"
+              accent={BORDER}
+            />
+
+            {/* Cambio % */}
+            <MetricCard
+              label="Cambio %"
+              value={changePct !== null
+                ? `${changePct >= 0 ? "+" : ""}${changePct.toFixed(3)}%`
+                : "—"}
+              sub={isUp ? "Precio subió" : isDown ? "Precio bajó" : "Sin variación"}
+              color={changeColor}
+              accent={pctAccent}
+              icon={isUp ? TrendingUp : isDown ? TrendingDown : Minus}
+            />
+
+            {/* Cambio COP */}
+            <MetricCard
+              label="Cambio COP"
+              value={change !== null
+                ? `${change >= 0 ? "+" : ""}${fmtCOP(change)} COP`
+                : "—"}
+              sub="vs. cierre"
+              color={changeColor}
+              accent={pctAccent}
+            />
           </div>
         )}
 
@@ -430,7 +381,6 @@ export default function TRMPage({ onClose }: Props) {
           </div>
         )}
 
-        {/* ── Bottom spacer ─────────────────────────────────────────────── */}
         <div className="h-2" />
       </div>
 
