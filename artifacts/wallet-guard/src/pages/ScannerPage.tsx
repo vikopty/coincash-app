@@ -76,22 +76,36 @@ const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) =>
 
             {/* Body */}
             <div style={{ padding: "20px 20px 24px" }}>
-              <p
+              <div
                 style={{
                   color: "rgba(255,255,255,0.75)",
                   fontSize: "13px",
                   lineHeight: "1.65",
                   marginBottom: "20px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
                 }}
               >
-                La información proporcionada en este informe es generada a partir de datos
-                on-chain y bases de datos públicas de terceros. CoinCashWalletGuard no
-                garantiza la exactitud absoluta, integridad o actualidad de los datos. Esta
-                información tiene fines puramente analíticos e informativos y no constituye
-                asesoramiento financiero ni legal.
-              </p>
+                <p>
+                  La información proporcionada en este informe es generada a partir de datos
+                  on-chain y bases de datos públicas de terceros. CoinCashWalletGuard no
+                  garantiza la exactitud absoluta, integridad o actualidad de los datos presentados.
+                </p>
+                <p>
+                  Esta información tiene fines puramente analíticos e informativos y no constituye
+                  asesoramiento financiero, legal ni recomendación de inversión.
+                </p>
+                <p>
+                  El usuario asume toda la responsabilidad por las decisiones tomadas en base a
+                  este análisis.
+                </p>
+                <p>
+                  En caso de dudas sobre la legalidad de los fondos, consulte con un profesional
+                  legal o las autoridades competentes.
+                </p>
+              </div>
 
-              {/* Entendido button */}
               <button
                 onClick={() => setShowModal(false)}
                 style={{
@@ -107,7 +121,7 @@ const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) =>
                   letterSpacing: "0.02em",
                 }}
               >
-                Entendido
+                Aceptar y continuar
               </button>
             </div>
           </div>
