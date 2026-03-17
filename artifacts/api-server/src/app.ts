@@ -7,6 +7,7 @@ import {
   ensureUsersTable, ensureMessagesTable,
   ensureChatUsersTable, ensureChatContactsTable,
   ensureDmTables, ensureVisitsTable, ensureAccountPinsTable,
+  deleteOldChatMessages,
 } from "./lib/db";
 
 const app: Express = express();
@@ -49,6 +50,18 @@ if (existsSync(walletGuardDist)) {
     await ensureDmTables();
     await ensureVisitsTable();
     await ensureAccountPinsTable();
+
+    // Run immediately on start, then every hour
+    const runCleanup = async () => {
+      try {
+        const deleted = await deleteOldChatMessages();
+        if (deleted > 0) console.log(`[cleanup] Deleted ${deleted} support messages older than 24h`);
+      } catch (err: any) {
+        console.error("[cleanup] Failed:", err?.message);
+      }
+    };
+    await runCleanup();
+    setInterval(runCleanup, 60 * 60 * 1000); // every hour
   } catch (err: any) {
     console.error("[app] DB bootstrap failed:", err?.message);
   }

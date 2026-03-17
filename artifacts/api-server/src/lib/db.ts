@@ -400,6 +400,14 @@ export async function ensureMessagesTable(): Promise<void> {
   console.log("[db] chat_messages table ready");
 }
 
+/** Delete support chat messages older than 24 hours. */
+export async function deleteOldChatMessages(): Promise<number> {
+  const res = await pool.query(
+    `DELETE FROM chat_messages WHERE timestamp < NOW() - INTERVAL '24 hours'`
+  );
+  return res.rowCount ?? 0;
+}
+
 /** Persist a new chat message. */
 export async function saveChatMessage(
   senderCcId:   string,
