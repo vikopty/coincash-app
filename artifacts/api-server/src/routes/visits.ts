@@ -14,17 +14,12 @@ interface CountryRecord {
   count: number;
 }
 
-const WINDOW_MS   = 24 * 60 * 60 * 1000; // 24 hours
-const MAX_PER_IP  = 2;                    // max visits per IP within the window
-
 const store: {
   total:     number;
   countries: Record<string, CountryRecord>;
-  ipLog:     Map<string, number[]>;   // IP → list of visit timestamps within the last 24 h
 } = {
   total:     0,
   countries: {},
-  ipLog:     new Map(),
 };
 
 // ── Geolocation via ip-api.com (free, no key needed) ─────────────────────────
@@ -65,28 +60,7 @@ function getClientIP(req: any): string {
 
 // ── POST /api/visit ───────────────────────────────────────────────────────────
 router.post("/visit", async (req, res) => {
-  const ip  = getClientIP(req);
-  const now = Date.now();
-
-  // Get existing timestamps for this IP, keeping only those within the 24 h window
-  const timestamps = (store.ipLog.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
-
-  // Reject if the IP has already been counted MAX_PER_IP times in this window
-  if (timestamps.length >= MAX_PER_IP) {
-    res.json({ ok: true, throttled: true });
-    return;
-  }
-
-  // Record this visit timestamp
-  timestamps.push(now);
-  store.ipLog.set(ip, timestamps);
-
-  // Periodically evict fully-expired IP entries to avoid unbounded memory growth
-  if (store.ipLog.size > 10_000) {
-    for (const [k, ts] of store.ipLog) {
-      if (ts.every((t) => now - t >= WINDOW_MS)) store.ipLog.delete(k);
-    }
-  }
+  const ip = getClientIP(req);
 
   store.total += 1;
 
