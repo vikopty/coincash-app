@@ -14,13 +14,11 @@ import { API_BASE } from "@/lib/apiConfig";
 
 const queryClient = new QueryClient();
 
-// Admin panel: navigate to the app URL with #soporte-admin hash
 const IS_ADMIN = typeof window !== "undefined" && window.location.hash === "#soporte-admin";
 
 function MainApp() {
   const [tab, setTab] = useState<Tab>("scanner");
 
-  // Register visit on app load (only for real users, not admin)
   useEffect(() => {
     if (IS_ADMIN) return;
     fetch(`${API_BASE}/visit`, { method: "POST" }).catch(() => {});
@@ -38,15 +36,39 @@ function MainApp() {
       <div style={{ display: tab === "mensajes" ? "block" : "none" }}>
         <DmPage />
       </div>
-      <div style={{ display: tab === "soporte" ? "block" : "none" }}>
-        <ChatPage />
-      </div>
+
+      {/* Soporte chat — rendered on top, full screen, with back button */}
+      {tab === "soporte" && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 500 }}>
+          {/* Back button overlay */}
+          <button
+            onClick={() => setTab("settings")}
+            style={{
+              position: "absolute", top: 16, left: 16, zIndex: 600,
+              background: "rgba(11,18,32,0.85)", border: "1px solid rgba(0,255,198,0.2)",
+              borderRadius: 20, padding: "6px 14px 6px 10px",
+              display: "flex", alignItems: "center", gap: 6,
+              color: "#00FFC6", fontSize: 13, fontWeight: 600,
+              cursor: "pointer", backdropFilter: "blur(8px)",
+              fontFamily: "'Inter', sans-serif",
+            }}
+          >
+            <span style={{ fontSize: 18, lineHeight: 1 }}>‹</span> Config
+          </button>
+          <ChatPage />
+        </div>
+      )}
+
       <div style={{ display: tab === "settings" ? "block" : "none" }}>
-        <SettingsPage />
+        <SettingsPage onOpenSupport={() => setTab("soporte")} />
       </div>
 
-      <BottomNav active={tab} onChange={setTab} />
-      <IOSInstallBanner />
+      {tab !== "soporte" && (
+        <>
+          <BottomNav active={tab} onChange={setTab} />
+          <IOSInstallBanner />
+        </>
+      )}
     </div>
   );
 }

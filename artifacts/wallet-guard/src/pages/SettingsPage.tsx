@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Camera, Bell, BellOff, Check } from "lucide-react";
+import { Camera, Bell, BellOff, Check, Headphones, ChevronRight } from "lucide-react";
 import { API_BASE } from "@/lib/apiConfig";
 
 const TEAL   = "#00FFC6";
@@ -40,7 +40,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return arr;
 }
 
-export default function SettingsPage() {
+export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => void }) {
   const [ccId]         = useState<string>(getCcId);
   const [photoUrl,     setPhotoUrl]     = useState<string | null>(() => localStorage.getItem("coincash-profile-photo"));
   const [uploading,    setUploading]    = useState(false);
@@ -214,6 +214,35 @@ export default function SettingsPage() {
             </div>
           </button>
         </div>
+      </div>
+
+      {/* Soporte */}
+      <div style={{ margin: "20px 16px 0" }}>
+        <p style={{ margin: "0 0 10px", fontSize: 12, color: MUTED, textTransform: "uppercase", letterSpacing: "0.08em" }}>Ayuda</p>
+        <button
+          onClick={onOpenSupport}
+          style={{
+            width: "100%", padding: "14px 16px",
+            background: CARD, borderRadius: 12,
+            border: "1px solid rgba(0,255,198,0.18)",
+            display: "flex", alignItems: "center", gap: 14,
+            cursor: "pointer", textAlign: "left",
+          }}
+        >
+          <div style={{
+            width: 40, height: 40, borderRadius: 11, flexShrink: 0,
+            background: "linear-gradient(135deg,rgba(0,255,198,0.2) 0%,rgba(0,184,169,0.1) 100%)",
+            border: "1px solid rgba(0,255,198,0.25)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <Headphones size={18} style={{ color: TEAL }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: "#fff" }}>Soporte</p>
+            <p style={{ margin: "3px 0 0", fontSize: 12, color: MUTED }}>Chatea con el equipo CoinCash</p>
+          </div>
+          <ChevronRight size={18} style={{ color: MUTED, flexShrink: 0 }} />
+        </button>
       </div>
 
       {/* Save feedback */}

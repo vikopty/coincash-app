@@ -1,4 +1,4 @@
-import { ScanSearch, MessageSquare, Headphones, Settings } from "lucide-react";
+import { ScanSearch, MessageSquare, Settings } from "lucide-react";
 
 export type Tab = "scanner" | "mensajes" | "soporte" | "settings";
 
@@ -73,10 +73,9 @@ export default function BottomNav({ active, onChange }: BottomNavProps) {
         }}>Mensajes</span>
       </button>
 
-      <NavBtn label="Soporte" icon={<Headphones size={20} />}
-        active={active === "soporte"} onClick={() => onChange("soporte")} />
-      <NavBtn label="Config"  icon={<Settings   size={20} />}
-        active={active === "settings"} onClick={() => onChange("settings")} />
+      <NavBtn label="Config" icon={<Settings size={20} />}
+        active={active === "settings" || active === "soporte"}
+        onClick={() => onChange("settings")} />
     </nav>
   );
 }
