@@ -470,23 +470,17 @@ export default function DmPage() {
   const [myId]                  = useState<string>(getCcId);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [activeChat, setActiveChat] = useState<string | null>(null);
-  const [overlayTop,    setOverlayTop]    = useState(0);
   const [overlayHeight, setOverlayHeight] = useState(() => window.visualViewport?.height ?? window.innerHeight);
 
-  // Resize overlay to match the visual viewport so keyboard never covers the input bar
+  // Shrink overlay height when the keyboard appears so the input bar stays visible.
+  // Always keep top:0 — only height changes. Using vv.offsetTop as top would shift
+  // the overlay down on iOS when Safari scrolls the page on keyboard open.
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    const update = () => {
-      setOverlayTop(vv.offsetTop ?? 0);
-      setOverlayHeight(vv.height);
-    };
+    const update = () => setOverlayHeight(vv.height);
     vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
-    return () => {
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
-    };
+    return () => vv.removeEventListener("resize", update);
   }, []);
 
   const loadContacts = useCallback(async () => {
@@ -515,7 +509,7 @@ export default function DmPage() {
       {activeChat && (
         <div style={{
           position: "fixed",
-          top: overlayTop,
+          top: 0,
           left: 0,
           right: 0,
           height: overlayHeight,
