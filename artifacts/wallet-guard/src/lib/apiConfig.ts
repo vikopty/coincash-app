@@ -1,20 +1,19 @@
 /**
  * Runtime API / Socket.io configuration.
  *
- * In both development and production, Replit's proxy routes
- * /api-server/* → api-server on port 8080 (stripping the prefix).
+ * The api-server artifact is registered at path "/api" in Replit's routing.
+ * Both the Vite dev proxy and Replit's deployment proxy forward /api/* to
+ * port 8080 (the api-server), so we can use the same paths everywhere.
  *
- * Development: Vite dev server proxy
- * Production:  Replit deployment proxy (same routing, same paths)
- *
- * We always use relative paths — no hardcoded ports needed.
+ * Socket.io is mounted at /api/socket.io on the server, keeping it inside
+ * the /api prefix that is routed to port 8080 in production.
  */
 
 /** Base URL for REST calls — no trailing slash. */
-export const API_BASE = "/api-server/api";
+export const API_BASE = "/api";
 
 /** Socket.io connection URL — empty string = connect to same origin. */
 export const SOCKET_URL = "";
 
-/** Socket.io path on the server. */
-export const SOCKET_PATH = "/api-server/socket.io";
+/** Socket.io path — must match the server's `path` option. */
+export const SOCKET_PATH = "/api/socket.io";

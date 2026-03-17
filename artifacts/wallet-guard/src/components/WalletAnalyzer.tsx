@@ -275,7 +275,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     const checkBlacklistDB = async (): Promise<boolean> => {
       try {
         const ethHex = tronBase58ToEthHex(addr);
-        const res = await fetch(`/api-server/api/blacklist/check/${encodeURIComponent(ethHex)}`);
+        const res = await fetch(`/api/blacklist/check/${encodeURIComponent(ethHex)}`);
         if (!res.ok) return false;
         const data = await res.json();
         return data.found === true;

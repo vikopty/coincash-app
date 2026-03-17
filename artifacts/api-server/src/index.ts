@@ -19,8 +19,9 @@ const io = new SocketIO(httpServer, {
     origin: "*",
     methods: ["GET", "POST"],
   },
-  // Allow clients to reach socket.io through the /api-server proxy path
-  path: "/socket.io",
+  // /api is the registered artifact path — both the Vite proxy (dev) and
+  // Replit's deployment proxy (prod) route /api/* to this server on port 8080.
+  path: "/api/socket.io",
 });
 
 // Attach io to the Express app so REST routes can emit events
