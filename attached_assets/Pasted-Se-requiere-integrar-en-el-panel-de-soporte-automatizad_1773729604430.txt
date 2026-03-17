@@ -1,0 +1,73 @@
+Se requiere integrar en el panel de soporte automatizado impulsado por inteligencia artificial dentro de la plataforma CoinCash, capaz de responder en tiempo real a los usuarios con consultas relacionadas con:
+
+
+- Wallets (billeteras digitales)
+- Riesgo AML (Anti-Money Laundering)
+- Direcciones en listas negras
+- Fondos congelados
+
+🔍 Funcionalidades del AI Agent:
+
+El agente debe ser capaz de:
+
+1. Analizar consultas sobre direcciones de billeteras.
+2. Interpretar resultados generados por el escáner CoinCash.
+3. Identificar niveles de riesgo asociados a una wallet.
+4. Explicar de forma clara las posibles razones por las cuales una wallet podría haber sido congelada.
+5. Basar sus respuestas en:
+   - Resultados del escáner CoinCash
+   - Información pública y análisis provenientes de exchanges
+   - Patrones comunes de riesgo AML
+
+📸 Requisitos del Usuario:
+
+Para recibir soporte más preciso, el usuario deberá enviar:
+
+- Captura de pantalla del resultado del escáner
+- Dirección de la wallet a analizar
+
+💬 Tipo de Respuestas:
+
+El sistema debe generar respuestas automáticas inteligentes, tipo ChatGPT, con:
+
+- Lenguaje claro, profesional y confiable
+- Explicaciones fáciles de entender
+- Capacidad de guiar al usuario según su caso
+
+💰 Sistema de Monetización (Servicio Premium):
+
+El agente debe detectar automáticamente oportunidades para ofrecer un análisis más profundo cuando el usuario presente casos como:
+
+- Fondos congelados
+- Wallets con alto riesgo
+- Problemas con exchanges
+
+En estos casos, el agente ofrecerá:
+
+🔐 Análisis Avanzado CoinCash
+
+- Informe más detallado sobre el estado de los fondos
+- Revisión más profunda basada en datos disponibles
+- Orientación sobre posibles causas
+
+💵 Costo del servicio: 100 USDT  
+💲 Método de pago: USDT (criptomoneda)
+
+⚠️ Avisos Legales Importantes:
+
+- Este servicio proporciona únicamente información y análisis con fines informativos.
+- No constituye asesoría legal, financiera ni de inversión.
+- No garantizamos la recuperación de fondos bajo ninguna circunstancia.
+- CoinCash no tiene control sobre wallets, exchanges o activos digitales de terceros.
+- No existe afiliación directa con exchanges ni acceso interno a sus sistemas.
+- La información proporcionada se basa en datos públicos, herramientas de análisis y fuentes externas, las cuales pueden variar o no estar completas.
+- CoinCash no se hace responsable por decisiones tomadas por el usuario basadas en la información proporcionada.
+- El pago del servicio corresponde únicamente al acceso a información más detallada y no implica ningún tipo de gestión, intermediación o recuperación de fondos.
+
+🤖 Objetivo del AI Agent:
+
+Brindar soporte automatizado eficiente, generar confianza en los usuarios y convertir consultas complejas en oportunidades de monetización de forma ética, clara y transparente.
+
+📌 Nota adicional:
+
+Todo el análisis proporcionado por CoinCash está basado en datos públicos, herramientas de escaneo y fuentes externas. CoinCash no tiene control sobre los fondos ni sobre las decisiones de los exchanges.
