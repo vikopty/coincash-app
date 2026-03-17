@@ -74,6 +74,7 @@ export default function AdminPage() {
   const [convMessages, setConvMessages]   = useState<ChatMessage[]>([]);
   const [input, setInput]                 = useState("");
   const [loadingConv, setLoadingConv]     = useState(false);
+  const [unreadUsers, setUnreadUsers]     = useState<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const { connected, messages, sendMessage, loadHistory } = useChatSocket(ADMIN_CC_ID);
@@ -108,6 +109,7 @@ export default function AdminPage() {
       .finally(() => setLoadingConv(false));
   }, [selectedUser, loadHistory]);
 
+  // Track messages for the currently open conversation
   useEffect(() => {
     if (!selectedUser || messages.length === 0) return;
     setConvMessages((prev) => {
@@ -122,6 +124,33 @@ export default function AdminPage() {
     });
     refreshConversations();
   }, [messages, selectedUser, refreshConversations]);
+
+  // Mark unread: any incoming client message for a user that isn't currently open
+  const seenMsgIds = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    messages.forEach((m) => {
+      if (seenMsgIds.current.has(m.id)) return;
+      seenMsgIds.current.add(m.id);
+      // Only flag messages FROM a real client (not from support/admin)
+      const isFromClient = m.senderCcId !== SUPPORT_ID && m.senderCcId !== ADMIN_CC_ID;
+      if (!isFromClient) return;
+      const fromUser = m.senderCcId;
+      if (fromUser !== selectedUser) {
+        setUnreadUsers((prev) => new Set(prev).add(fromUser));
+        refreshConversations();
+      }
+    });
+  }, [messages, selectedUser, refreshConversations]);
+
+  // Clear unread when user opens a conversation
+  function openConversation(userId: string) {
+    setSelectedUser(userId);
+    setUnreadUsers((prev) => {
+      const next = new Set(prev);
+      next.delete(userId);
+      return next;
+    });
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -159,31 +188,83 @@ export default function AdminPage() {
               Aún no hay conversaciones
             </div>
           ) : (
-            conversations.map((c) => (
-              <button
-                key={c.userId}
-                onClick={() => setSelectedUser(c.userId)}
-                style={{
-                  width: "100%", padding: "14px 20px", background: "transparent",
-                  border: "none", borderBottom: "1px solid rgba(255,255,255,0.05)",
-                  cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12,
-                }}
-              >
-                <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#1E2736", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0, border: "2px solid transparent" }}>
-                  👤
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                    <span style={{ fontWeight: 600, fontSize: 13, color: "#E5E7EB", fontFamily: "monospace" }}>{c.userId}</span>
-                    <span style={{ fontSize: 11, color: "#6B7280", flexShrink: 0 }}>{timeStr(c.lastTime)}</span>
+            conversations.map((c) => {
+              const hasUnread = unreadUsers.has(c.userId);
+              return (
+                <button
+                  key={c.userId}
+                  onClick={() => openConversation(c.userId)}
+                  style={{
+                    width: "100%", padding: "14px 20px",
+                    background: hasUnread ? "rgba(0,255,198,0.06)" : "transparent",
+                    border: "none",
+                    borderBottom: hasUnread
+                      ? "1px solid rgba(0,255,198,0.15)"
+                      : "1px solid rgba(255,255,255,0.05)",
+                    borderLeft: hasUnread ? "3px solid #00FFC6" : "3px solid transparent",
+                    cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12,
+                    transition: "background 0.2s",
+                  }}
+                >
+                  {/* Avatar with unread pulse */}
+                  <div style={{ position: "relative", flexShrink: 0 }}>
+                    <div style={{
+                      width: 42, height: 42, borderRadius: "50%",
+                      background: hasUnread ? "rgba(0,255,198,0.15)" : "#1E2736",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 16,
+                      border: hasUnread ? "2px solid #00FFC6" : "2px solid transparent",
+                    }}>
+                      👤
+                    </div>
+                    {hasUnread && (
+                      <div style={{
+                        position: "absolute", top: 0, right: 0,
+                        width: 12, height: 12, borderRadius: "50%",
+                        background: "#00FFC6",
+                        border: "2px solid #0B0F14",
+                        animation: "pulse 1.5s infinite",
+                      }} />
+                    )}
                   </div>
-                  <div style={{ fontSize: 12, color: "#6B7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {c.lastSender === SUPPORT_ID ? "Tú: " : ""}
-                    {isMediaMsg(c.lastMessage) ? "📷 Imagen" : c.lastMessage}
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, alignItems: "center" }}>
+                      <span style={{
+                        fontWeight: hasUnread ? 700 : 600,
+                        fontSize: 13,
+                        color: hasUnread ? "#00FFC6" : "#E5E7EB",
+                        fontFamily: "monospace",
+                      }}>{c.userId}</span>
+                      <span style={{ fontSize: 11, color: hasUnread ? "#00FFC6" : "#6B7280", flexShrink: 0, fontWeight: hasUnread ? 600 : 400 }}>
+                        {timeStr(c.lastTime)}
+                      </span>
+                    </div>
+                    <div style={{
+                      fontSize: 12,
+                      color: hasUnread ? "#E5E7EB" : "#6B7280",
+                      fontWeight: hasUnread ? 500 : 400,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>
+                      {c.lastSender === SUPPORT_ID ? "Tú: " : ""}
+                      {isMediaMsg(c.lastMessage) ? "📷 Imagen" : c.lastMessage}
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))
+
+                  {/* Unread badge */}
+                  {hasUnread && (
+                    <div style={{
+                      background: "#00FFC6", color: "#0B1220",
+                      fontSize: 10, fontWeight: 700,
+                      borderRadius: 10, padding: "2px 7px",
+                      flexShrink: 0, minWidth: 18, textAlign: "center",
+                    }}>
+                      NEW
+                    </div>
+                  )}
+                </button>
+              );
+            })
           )}
         </div>
       </div>
