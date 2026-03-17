@@ -16,7 +16,7 @@ const CARD   = "#121821";
 const BORDER = "rgba(255,255,255,0.07)";
 
 // ── Compute risk score from report data (mirrors TronAnalysisReport logic) ──────
-function computeRiskScore(d: WalletAnalysisData): number {
+function computeRiskScore(d: ReportData): number {
   const daysSinceCreation = (Date.now() - d.dateCreated) / 86_400_000;
   let score = 0;
   if (daysSinceCreation < 30)        score += 20;
@@ -80,6 +80,7 @@ interface ReportData {
   accountType: string;
   isFrozen: boolean;
   isInBlacklistDB: boolean;
+  balanceTRX: number;
   balanceUSDT: number;
   totalTx: number;
   txIn: number;
@@ -325,6 +326,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     };
 
     let accountType  = "Normal";
+    let balanceTRX   = 0;
     let balanceUSDT  = 0;
     let dateCreated: number = Date.now();
     let detectedViaTRC20 = false;
@@ -333,6 +335,9 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       // Standard path — account found via TronGrid /v1/accounts
       accountType = accountTypeMap[account.account_type as number] ?? "Normal";
       dateCreated = account.create_time || Date.now();
+
+      // TRX balance: account.balance is in SUN (1 TRX = 1,000,000 SUN)
+      balanceTRX = typeof account.balance === "number" ? account.balance / 1_000_000 : 0;
 
       const trc20Map: Record<string, string> = {};
       if (Array.isArray(account.trc20)) {
@@ -509,6 +514,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       accountType,
       isFrozen,
       isInBlacklistDB,
+      balanceTRX,
       balanceUSDT,
       totalTx,
       txIn,
@@ -768,7 +774,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
               {/* ── 2×2 Detail cards ── */}
               {(() => {
-                const isActive = reportData.totalTx > 0 || reportData.balanceUSDT > 0;
+                const isActive = reportData.totalTx > 0 || reportData.balanceTRX > 0 || reportData.balanceUSDT > 0;
                 const cards = [
                   {
                     Icon: Activity,
@@ -786,8 +792,8 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                   },
                   {
                     Icon: Zap,
-                    label: "BALANCE",
-                    value: `${reportData.balanceUSDT.toFixed(2)} USDT`,
+                    label: "TRX BALANCE",
+                    value: `${reportData.balanceTRX.toFixed(2)} TRX`,
                     valueColor: "rgba(255,255,255,0.9)",
                   },
                   {

@@ -10,6 +10,7 @@ interface ReportData {
   accountType: string;
   isFrozen: boolean;
   isInBlacklistDB: boolean;
+  balanceTRX?: number;
   balanceUSDT: number;
   totalTx: number;
   txIn: number;
@@ -32,6 +33,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
     accountType = "Normal",
     isFrozen = false,
     isInBlacklistDB = false,
+    balanceTRX = 0,
     balanceUSDT = 0,
     totalTx = 0,
     txIn = 0,
@@ -307,7 +309,7 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
             <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
               <span className="text-xs text-muted-foreground">Estado</span>
               {(() => {
-                const active = totalTx > 0 || balanceUSDT > 0;
+                const active = totalTx > 0 || balanceTRX > 0 || balanceUSDT > 0;
                 return (
                   <div className={`font-semibold flex items-center gap-1.5 ${active ? "text-green-500" : "text-amber-400"}`}>
                     <div className={`w-2 h-2 rounded-full ${active ? "bg-green-500 animate-pulse" : "bg-amber-400"}`} />
@@ -318,7 +320,10 @@ const TronAnalysisReport = ({ reportData }: { reportData: ReportData }) => {
             </div>
             <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
               <span className="text-xs text-muted-foreground">Balance Total</span>
-              <div className="font-semibold text-lg">{formattedBalance} USDT</div>
+              <div className="font-semibold text-lg">{balanceTRX.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRX</div>
+              {balanceUSDT > 0 && (
+                <div className="text-xs text-muted-foreground">{formattedBalance} USDT</div>
+              )}
             </div>
             <div className="space-y-1 bg-background/50 p-3 rounded-lg border border-border/50">
               <span className="text-xs text-muted-foreground">Wallet creada</span>
