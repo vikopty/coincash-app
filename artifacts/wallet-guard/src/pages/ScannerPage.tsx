@@ -6,8 +6,15 @@ interface ScannerPageProps {
   onAddressConsumed?: () => void;
 }
 
+const DISCLAIMER_KEY = "coincash-disclaimer-accepted";
+
 const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) => {
-  const [showModal, setShowModal] = useState(true);
+  const [showModal, setShowModal] = useState(() => !localStorage.getItem(DISCLAIMER_KEY));
+
+  function acceptDisclaimer() {
+    localStorage.setItem(DISCLAIMER_KEY, "1");
+    setShowModal(false);
+  }
 
   return (
     <div className="pb-24" style={{ minHeight: "100vh", background: "#0B0F14" }}>
@@ -52,7 +59,7 @@ const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) =>
               </span>
               {/* Close ×  */}
               <button
-                onClick={() => setShowModal(false)}
+                onClick={acceptDisclaimer}
                 style={{
                   background: "rgba(255,255,255,0.18)",
                   border: "none",
@@ -107,7 +114,7 @@ const ScannerPage = ({ prefillAddress, onAddressConsumed }: ScannerPageProps) =>
               </div>
 
               <button
-                onClick={() => setShowModal(false)}
+                onClick={acceptDisclaimer}
                 style={{
                   width: "100%",
                   padding: "12px 0",
