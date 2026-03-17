@@ -446,7 +446,7 @@ export interface ConversationSummary {
 export async function getConversationsForSupport(): Promise<ConversationSummary[]> {
   const res = await pool.query<ConversationSummary>(`
     SELECT DISTINCT ON (user_id)
-      user_id,
+      user_id       AS "userId",
       message       AS "lastMessage",
       timestamp     AS "lastTime",
       sender_coincash_id AS "lastSender"
