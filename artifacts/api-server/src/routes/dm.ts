@@ -1,5 +1,7 @@
 import { Router } from "express";
-import { addDmContact, getDmContacts, removeDmContact, getDmMessages } from "../lib/db";
+import {
+  addDmContact, getDmContacts, removeDmContact, getDmMessages, setDmContactNickname,
+} from "../lib/db";
 
 const router = Router();
 const CC_RE  = /^CC-\d{6}$/;
@@ -25,6 +27,16 @@ router.post("/dm/contacts", async (req, res) => {
   }
   const contact = await addDmContact(ownerId, contactId);
   res.json({ contact });
+});
+
+// PUT /api/dm/contacts/nickname   { ownerId, contactId, nickname }
+router.put("/dm/contacts/nickname", async (req, res) => {
+  const { ownerId, contactId, nickname } = req.body ?? {};
+  if (!CC_RE.test(ownerId) || !CC_RE.test(contactId)) {
+    return res.status(400).json({ error: "Invalid CC-IDs" });
+  }
+  await setDmContactNickname(ownerId, contactId, nickname ?? "");
+  res.json({ ok: true });
 });
 
 // DELETE /api/dm/contacts  { ownerId, contactId }

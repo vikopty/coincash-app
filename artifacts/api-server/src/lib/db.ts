@@ -498,6 +498,7 @@ export interface DmContact {
   id:         number;
   owner_id:   string;
   contact_id: string;
+  nickname:   string | null;
   created_at: Date;
 }
 
@@ -518,10 +519,13 @@ export async function ensureDmTables(): Promise<void> {
       id         SERIAL PRIMARY KEY,
       owner_id   TEXT NOT NULL,
       contact_id TEXT NOT NULL,
+      nickname   TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       UNIQUE(owner_id, contact_id)
     )
   `);
+  // migrate: add nickname if missing
+  await pool.query(`ALTER TABLE dm_contacts ADD COLUMN IF NOT EXISTS nickname TEXT`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS dm_messages (
       id          SERIAL PRIMARY KEY,
@@ -535,7 +539,62 @@ export async function ensureDmTables(): Promise<void> {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS dm_msgs_pair_idx ON dm_messages (sender_id, receiver_id)`);
-  console.log("[db] dm_contacts + dm_messages tables ready");
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id         SERIAL PRIMARY KEY,
+      cc_id      TEXT NOT NULL,
+      endpoint   TEXT NOT NULL,
+      p256dh     TEXT NOT NULL,
+      auth       TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE(cc_id, endpoint)
+    )
+  `);
+  console.log("[db] dm_contacts + dm_messages + push_subscriptions tables ready");
+}
+
+export async function setDmContactNickname(
+  ownerId:   string,
+  contactId: string,
+  nickname:  string,
+): Promise<void> {
+  await pool.query(
+    `UPDATE dm_contacts SET nickname = $1 WHERE owner_id = $2 AND contact_id = $3`,
+    [nickname.trim() || null, ownerId, contactId],
+  );
+}
+
+// ── Push subscriptions ──────────────────────────────────────────────────────
+
+export interface PushSub {
+  cc_id:    string;
+  endpoint: string;
+  p256dh:   string;
+  auth:     string;
+}
+
+export async function savePushSubscription(sub: PushSub): Promise<void> {
+  await pool.query(
+    `INSERT INTO push_subscriptions (cc_id, endpoint, p256dh, auth)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (cc_id, endpoint) DO UPDATE SET p256dh=$3, auth=$4`,
+    [sub.cc_id, sub.endpoint, sub.p256dh, sub.auth],
+  );
+}
+
+export async function deletePushSubscription(ccId: string, endpoint: string): Promise<void> {
+  await pool.query(
+    `DELETE FROM push_subscriptions WHERE cc_id=$1 AND endpoint=$2`,
+    [ccId, endpoint],
+  );
+}
+
+export async function getPushSubscriptionsForUser(ccId: string): Promise<PushSub[]> {
+  const res = await pool.query<PushSub>(
+    `SELECT cc_id, endpoint, p256dh, auth FROM push_subscriptions WHERE cc_id=$1`,
+    [ccId],
+  );
+  return res.rows;
 }
 
 export async function addDmContact(ownerId: string, contactId: string): Promise<DmContact | null> {

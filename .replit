@@ -53,6 +53,9 @@ channel = "stable-25_05"
 
 [userenv.shared]
 VITE_TRON_API_KEY = "3602311a-f31c-4ad0-b351-647e8cd9d11a"
+VAPID_PUBLIC_KEY = "BGCYhOmWOgJ-XWbx0PTJ9AsVUCEVQIhz8Os8mPXHZweoKtB3Wnjmti_bakBajkCLmEi9Nk_ILqKJLYVIcW4tDMI"
+VAPID_PRIVATE_KEY = "BnJWuq7khddSvWLP3KbOovWwlrshFLNSSlUJIU3S8ek"
+VAPID_MAILTO = "mailto:soporte@coincash.app"
 
 [[ports]]
 localPort = 8080

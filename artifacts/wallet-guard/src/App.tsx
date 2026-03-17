@@ -8,7 +8,7 @@ import ScannerPage from "@/pages/ScannerPage";
 import ChatPage from "@/pages/ChatPage";
 import AdminPage from "@/pages/AdminPage";
 import DmPage from "@/pages/DmPage";
-import PlaceholderPage from "@/pages/PlaceholderPage";
+import SettingsPage from "@/pages/SettingsPage";
 import IOSInstallBanner from "@/components/IOSInstallBanner";
 
 const queryClient = new QueryClient();
@@ -35,7 +35,7 @@ function MainApp() {
         <ChatPage />
       </div>
       <div style={{ display: tab === "settings" ? "block" : "none" }}>
-        <PlaceholderPage title="Settings" icon="⚙️" />
+        <SettingsPage />
       </div>
 
       <BottomNav active={tab} onChange={setTab} />

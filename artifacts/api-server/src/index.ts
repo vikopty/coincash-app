@@ -3,6 +3,7 @@ import { createServer } from "http";
 import { Server as SocketIO } from "socket.io";
 import app from "./app";
 import { saveChatMessage, getChatUserById, saveDmMessage } from "./lib/db";
+import { sendPushToUser } from "./routes/push";
 
 const rawPort = process.env["PORT"] ?? "3000";
 const port    = Number(rawPort);
@@ -116,6 +117,12 @@ io.on("connection", (socket) => {
       };
       io.to(to).emit("dm_receive", msg);
       io.to(myId).emit("dm_receive", msg);
+      // Push notification to receiver (fires & forgets)
+      sendPushToUser(to, {
+        title: `Nuevo mensaje de ${myId}`,
+        body:  msgType === "text" ? "Mensaje cifrado" : msgType === "image" ? "📷 Foto" : "🎤 Nota de voz",
+        data:  { senderId: myId },
+      }).catch(() => {});
     } catch (err: any) {
       console.error("[socket] dm_send error:", err?.message);
       socket.emit("error", { error: "Failed to send DM" });
