@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Camera, Bell, BellOff, Check, Headphones, ChevronRight, Play } from "lucide-react";
+import { Camera, Bell, BellOff, Check, Headphones, ChevronRight, Play, Trash2 } from "lucide-react";
 import { API_BASE } from "@/lib/apiConfig";
 
 const TEAL   = "#00FFC6";
@@ -73,6 +73,12 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
       flashSaved();
     } catch { alert("No se pudo subir la foto"); }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
+  }
+
+  function removePhoto() {
+    localStorage.removeItem("coincash-profile-photo");
+    setPhotoUrl(null);
+    flashSaved();
   }
 
   function flashSaved() {
@@ -161,10 +167,30 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
             </div>
           </div>
 
-          <div>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Cambiar foto</p>
-            <p style={{ margin: "4px 0 0", fontSize: 12, color: MUTED }}>Toca el círculo para elegir una imagen</p>
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+              {photoUrl ? "Foto de perfil" : "Cambiar foto"}
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: MUTED }}>
+              Toca el círculo para elegir una imagen
+            </p>
             {uploading && <p style={{ margin: "4px 0 0", fontSize: 12, color: TEAL }}>Subiendo...</p>}
+
+            {/* Delete button — only visible when there's a photo */}
+            {photoUrl && !uploading && (
+              <button
+                onClick={removePhoto}
+                style={{
+                  marginTop: 10, display: "flex", alignItems: "center", gap: 6,
+                  background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)",
+                  borderRadius: 8, padding: "6px 12px", cursor: "pointer",
+                  color: "rgb(248,113,113)", fontSize: 12, fontWeight: 600,
+                }}
+              >
+                <Trash2 size={13} />
+                Eliminar foto
+              </button>
+            )}
           </div>
         </div>
         <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhotoChange} />
