@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
+import { SOCKET_URL, SOCKET_PATH } from "@/lib/apiConfig";
 
 export interface ChatMessage {
   id: number;
@@ -9,8 +10,6 @@ export interface ChatMessage {
   timestamp: string;
 }
 
-const SOCKET_PATH = "/api-server/socket.io";
-
 export function useChatSocket(myCcId: string | null) {
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
@@ -19,7 +18,7 @@ export function useChatSocket(myCcId: string | null) {
   useEffect(() => {
     if (!myCcId) return;
 
-    const socket = io("", {
+    const socket = io(SOCKET_URL, {
       path: SOCKET_PATH,
       transports: ["websocket", "polling"],
       reconnection: true,

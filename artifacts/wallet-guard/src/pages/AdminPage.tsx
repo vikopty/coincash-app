@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useChatSocket } from "@/hooks/useChatSocket";
+import { API_BASE } from "@/lib/apiConfig";
 
 const ADMIN_CC_ID = "CC-801286";
 const SUPPORT_ID  = "CC-SUPPORT";
-const API         = "/api-server/api";
+const API         = API_BASE;
 
 interface ConvSummary {
   userId:      string;

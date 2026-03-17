@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useChatSocket } from "@/hooks/useChatSocket";
+import { API_BASE } from "@/lib/apiConfig";
 
 const SUPPORT_ID = "CC-SUPPORT";
-const API = "/api-server/api";
+const API = API_BASE;
 
 function generateCcId() {
   const n = Math.floor(Math.random() * 1_000_000);
