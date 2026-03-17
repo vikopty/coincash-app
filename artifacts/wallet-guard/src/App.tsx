@@ -15,19 +15,30 @@ import { API_BASE } from "@/lib/apiConfig";
 
 const queryClient = new QueryClient();
 
-const IS_ADMIN = typeof window !== "undefined" && window.location.hash === "#soporte-admin";
-const IS_VIDEO = typeof window !== "undefined" && window.location.hash === "#video";
+function getHash() {
+  return typeof window !== "undefined" ? window.location.hash : "";
+}
 
 function MainApp() {
   const [tab, setTab] = useState<Tab>("scanner");
+  const [hash, setHash] = useState<string>(getHash);
 
   useEffect(() => {
-    if (IS_ADMIN) return;
-    fetch(`${API_BASE}/visit`, { method: "POST" }).catch(() => {});
+    const onHash = () => setHash(window.location.hash);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  if (IS_ADMIN) return <AdminPage />;
-  if (IS_VIDEO) return <VideoPage />;
+  const isAdmin = hash === "#soporte-admin";
+  const isVideo = hash === "#video";
+
+  useEffect(() => {
+    if (isAdmin || isVideo) return;
+    fetch(`${API_BASE}/visit`, { method: "POST" }).catch(() => {});
+  }, [isAdmin, isVideo]);
+
+  if (isAdmin) return <AdminPage />;
+  if (isVideo) return <VideoPage />;
 
   return (
     <div style={{ minHeight: "100vh", background: "#0B0F14" }}>
@@ -38,10 +49,9 @@ function MainApp() {
         <DmPage />
       </div>
 
-      {/* Soporte chat — rendered on top, full screen, with back button */}
+      {/* Soporte chat — full screen with back button */}
       {tab === "soporte" && (
         <div style={{ position: "fixed", inset: 0, zIndex: 500 }}>
-          {/* Back button overlay */}
           <button
             onClick={() => setTab("settings")}
             style={{

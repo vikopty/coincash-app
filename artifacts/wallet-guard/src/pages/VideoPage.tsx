@@ -86,6 +86,22 @@ export default function VideoPage() {
         />
       </div>
 
+      {/* Back button */}
+      <button
+        onClick={() => { window.location.hash = ""; }}
+        style={{
+          position: 'fixed', top: 16, left: 16, zIndex: 200,
+          background: 'rgba(11,18,32,0.85)', border: '1px solid rgba(0,255,198,0.2)',
+          borderRadius: 20, padding: '6px 14px 6px 10px',
+          display: 'flex', alignItems: 'center', gap: 6,
+          color: '#00FFC6', fontSize: 13, fontWeight: 600,
+          cursor: 'pointer', backdropFilter: 'blur(8px)',
+          fontFamily: "'Inter', sans-serif",
+        }}
+      >
+        <span style={{ fontSize: 18, lineHeight: 1 }}>‹</span> Volver
+      </button>
+
       {/* Scene dots */}
       <div style={{ position: 'fixed', bottom: 12, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 6, zIndex: 101 }}>
         {SCENE_DURATIONS.map((_, i) => (
