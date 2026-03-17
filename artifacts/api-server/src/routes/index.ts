@@ -11,6 +11,7 @@ import chatRouter from "./chat";
 import dmRouter from "./dm";
 import storageRouter from "./storage";
 import pushRouter from "./push";
+import visitsRouter from "./visits";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(chatRouter);
 router.use(dmRouter);
 router.use(storageRouter);
 router.use(pushRouter);
+router.use(visitsRouter);
 
 export default router;

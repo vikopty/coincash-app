@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,6 +10,7 @@ import AdminPage from "@/pages/AdminPage";
 import DmPage from "@/pages/DmPage";
 import SettingsPage from "@/pages/SettingsPage";
 import IOSInstallBanner from "@/components/IOSInstallBanner";
+import { API_BASE } from "@/lib/apiConfig";
 
 const queryClient = new QueryClient();
 
@@ -18,6 +19,12 @@ const IS_ADMIN = typeof window !== "undefined" && window.location.hash === "#sop
 
 function MainApp() {
   const [tab, setTab] = useState<Tab>("scanner");
+
+  // Register visit on app load (only for real users, not admin)
+  useEffect(() => {
+    if (IS_ADMIN) return;
+    fetch(`${API_BASE}/visit`, { method: "POST" }).catch(() => {});
+  }, []);
 
   if (IS_ADMIN) {
     return <AdminPage />;

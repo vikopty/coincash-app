@@ -68,6 +68,9 @@ function timeStr(ts: string) {
   return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
 }
 
+interface CountryRecord { name: string; code: string; count: number; }
+interface VisitStats   { total: number; countries: CountryRecord[]; }
+
 export default function AdminPage() {
   const [conversations, setConversations] = useState<ConvSummary[]>([]);
   const [selectedUser, setSelectedUser]   = useState<string | null>(null);
@@ -75,7 +78,24 @@ export default function AdminPage() {
   const [input, setInput]                 = useState("");
   const [loadingConv, setLoadingConv]     = useState(false);
   const [unreadUsers, setUnreadUsers]     = useState<Set<string>>(new Set());
+  const [adminTab, setAdminTab]           = useState<"mensajes" | "visitantes">("mensajes");
+  const [visitStats, setVisitStats]       = useState<VisitStats>({ total: 0, countries: [] });
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // ── Visitor stats polling ─────────────────────────────────────────────────
+  const fetchVisitStats = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API}/visit/stats`);
+      const data = await res.json();
+      if (typeof data.total === "number") setVisitStats(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchVisitStats();
+    const t = setInterval(fetchVisitStats, 5000);
+    return () => clearInterval(t);
+  }, [fetchVisitStats]);
 
   const { connected, messages, sendMessage, loadHistory } = useChatSocket(ADMIN_CC_ID);
 
@@ -162,25 +182,150 @@ export default function AdminPage() {
     setInput("");
   }
 
-  // ── Conversation list ──────────────────────────────────────────────────────
+  // ── Conversation list / Visitor stats ────────────────────────────────────
   if (!selectedUser) {
+    const maxVisits = visitStats.countries[0]?.count ?? 1;
+
     return (
       <div style={{ height: "100vh", background: "#0B0F14", color: "#fff", fontFamily: "'Inter',sans-serif", display: "flex", flexDirection: "column" }}>
         {/* Header */}
-        <div style={{ background: "#0B1220", borderBottom: "1px solid rgba(255,255,255,0.08)", padding: "20px 20px 16px", flexShrink: 0 }}>
+        <div style={{ background: "#0B1220", borderBottom: "1px solid rgba(255,255,255,0.08)", padding: "16px 20px 0", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
             <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#00FFC6,#00B8A9)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🛡</div>
-            <div>
+            <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>Soporte CoinCash</div>
               <div style={{ fontSize: 11, color: connected ? "#00FFC6" : "#9CA3AF" }}>
                 {connected ? "● En línea" : "○ Conectando…"}
               </div>
             </div>
           </div>
-          <div style={{ fontSize: 11, color: "#4B5563", marginTop: 8 }}>Panel de agente · {ADMIN_CC_ID}</div>
+          <div style={{ fontSize: 11, color: "#4B5563", margin: "6px 0 12px" }}>Panel de agente · {ADMIN_CC_ID}</div>
+
+          {/* Tab bar */}
+          <div style={{ display: "flex", gap: 4 }}>
+            {(["mensajes", "visitantes"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setAdminTab(t)}
+                style={{
+                  flex: 1, padding: "8px 0", border: "none", cursor: "pointer",
+                  background: "transparent", fontFamily: "inherit", fontSize: 13, fontWeight: 600,
+                  color: adminTab === t ? "#00FFC6" : "#6B7280",
+                  borderBottom: adminTab === t ? "2px solid #00FFC6" : "2px solid transparent",
+                  transition: "all 0.2s", textTransform: "capitalize",
+                }}
+              >
+                {t === "mensajes" ? "💬 Mensajes" : "🌍 Visitantes"}
+                {t === "mensajes" && unreadUsers.size > 0 && (
+                  <span style={{ marginLeft: 6, background: "#00FFC6", color: "#0B1220", borderRadius: 10, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>
+                    {unreadUsers.size}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
 
+        {/* ── Visitor stats panel ── */}
+        {adminTab === "visitantes" && (
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+
+            {/* Total counter card */}
+            <div style={{
+              background: "linear-gradient(135deg, rgba(0,255,198,0.08) 0%, rgba(0,184,169,0.04) 100%)",
+              border: "1px solid rgba(0,255,198,0.2)",
+              borderRadius: 16, padding: "20px 24px", marginBottom: 16,
+              backdropFilter: "blur(10px)",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <div>
+                <div style={{ fontSize: 11, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>
+                  Total de visitas
+                </div>
+                <div style={{ fontSize: 40, fontWeight: 800, color: "#00FFC6", letterSpacing: "-1px", lineHeight: 1 }}>
+                  {visitStats.total.toLocaleString("es-ES")}
+                </div>
+                <div style={{ fontSize: 11, color: "#4B5563", marginTop: 6 }}>
+                  {visitStats.countries.length} {visitStats.countries.length === 1 ? "país" : "países"} detectados
+                </div>
+              </div>
+              <div style={{ fontSize: 48, opacity: 0.3 }}>🌐</div>
+            </div>
+
+            {/* Live indicator */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12, paddingLeft: 2 }}>
+              <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#00FFC6", animation: "pulse 1.5s infinite" }} />
+              <span style={{ fontSize: 11, color: "#6B7280" }}>Actualización en tiempo real · cada 5 s</span>
+            </div>
+
+            {/* Country cards */}
+            {visitStats.countries.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 24px", color: "#4B5563" }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>🌍</div>
+                <div>Aún no hay visitas registradas</div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {visitStats.countries.map((c, i) => {
+                  const pct = Math.round((c.count / maxVisits) * 100);
+                  const flagSrc = c.code === "xx"
+                    ? null
+                    : `https://flagcdn.com/24x18/${c.code}.png`;
+                  return (
+                    <div
+                      key={c.code}
+                      title={`${c.name}: ${c.count} visita${c.count !== 1 ? "s" : ""}`}
+                      style={{
+                        background: i === 0
+                          ? "linear-gradient(135deg,rgba(0,255,198,0.1),rgba(0,184,169,0.05))"
+                          : "rgba(255,255,255,0.03)",
+                        border: i === 0
+                          ? "1px solid rgba(0,255,198,0.25)"
+                          : "1px solid rgba(255,255,255,0.06)",
+                        borderRadius: 12, padding: "12px 14px",
+                        transition: "border-color 0.2s",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                        {/* Flag */}
+                        <div style={{ width: 28, height: 20, borderRadius: 3, overflow: "hidden", flexShrink: 0, background: "#1E2736", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {flagSrc
+                            ? <img src={flagSrc} alt={c.name} style={{ width: 28, height: "auto", display: "block" }} />
+                            : <span style={{ fontSize: 14 }}>🌐</span>
+                          }
+                        </div>
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: i === 0 ? "#00FFC6" : "#E5E7EB" }}>
+                          {c.name}
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: i === 0 ? "#00FFC6" : "#9CA3AF" }}>
+                          {c.count.toLocaleString("es-ES")}
+                        </span>
+                        {i === 0 && (
+                          <span style={{ fontSize: 9, background: "rgba(0,255,198,0.15)", color: "#00FFC6", borderRadius: 6, padding: "2px 5px", fontWeight: 700 }}>
+                            #1
+                          </span>
+                        )}
+                      </div>
+                      {/* Progress bar */}
+                      <div style={{ height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{
+                          height: "100%", width: `${pct}%`,
+                          background: i === 0
+                            ? "linear-gradient(90deg,#00FFC6,#00B8A9)"
+                            : "rgba(0,255,198,0.4)",
+                          borderRadius: 2, transition: "width 0.5s ease",
+                        }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Conversation list */}
+        {adminTab === "mensajes" && (
         <div style={{ flex: 1, overflowY: "auto" }}>
           {conversations.length === 0 ? (
             <div style={{ textAlign: "center", padding: "60px 24px", color: "#4B5563", fontSize: 14 }}>
