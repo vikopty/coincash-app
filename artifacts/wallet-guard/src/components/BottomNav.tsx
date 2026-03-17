@@ -1,6 +1,6 @@
-import { ScanSearch, MessageSquare, Settings } from "lucide-react";
+import { ScanSearch, Headphones, Settings } from "lucide-react";
 
-export type Tab = "scanner" | "mensajes" | "soporte" | "settings";
+export type Tab = "scanner" | "soporte" | "settings";
 
 interface BottomNavProps {
   active: Tab;
@@ -45,9 +45,9 @@ export default function BottomNav({ active, onChange }: BottomNavProps) {
       <NavBtn label="Scanner" icon={<ScanSearch size={20} />}
         active={active === "scanner"} onClick={() => onChange("scanner")} />
 
-      {/* Mensajes — accent pill */}
+      {/* Soporte — accent pill */}
       <button
-        onClick={() => onChange("mensajes")}
+        onClick={() => onChange("soporte")}
         style={{
           flex: 1, display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center",
@@ -57,24 +57,24 @@ export default function BottomNav({ active, onChange }: BottomNavProps) {
       >
         <div style={{
           width: 40, height: 40, borderRadius: 13,
-          background: active === "mensajes"
+          background: active === "soporte"
             ? "linear-gradient(135deg,#00FFC6 0%,#00B8A9 100%)"
             : "rgba(0,255,198,0.1)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: active === "mensajes" ? "0 0 16px rgba(0,255,198,0.4)" : "none",
+          boxShadow: active === "soporte" ? "0 0 16px rgba(0,255,198,0.4)" : "none",
           transition: "all 0.2s ease",
         }}>
-          <MessageSquare size={19} style={{ color: active === "mensajes" ? "#0B1220" : TEAL }} />
+          <Headphones size={19} style={{ color: active === "soporte" ? "#0B1220" : TEAL }} />
         </div>
         <span style={{
           fontSize: 10, fontWeight: 700,
-          color: active === "mensajes" ? TEAL : "rgba(0,255,198,0.55)",
+          color: active === "soporte" ? TEAL : "rgba(0,255,198,0.55)",
           letterSpacing: "0.04em",
-        }}>Mensajes</span>
+        }}>Soporte</span>
       </button>
 
       <NavBtn label="Config" icon={<Settings size={20} />}
-        active={active === "settings" || active === "soporte"}
+        active={active === "settings"}
         onClick={() => onChange("settings")} />
     </nav>
   );
