@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { SOCKET_URL, SOCKET_PATH } from "@/lib/apiConfig";
 
@@ -19,8 +19,9 @@ interface UseDmSocketOptions {
 }
 
 export function useDmSocket({ myId, onReceive }: UseDmSocketOptions) {
-  const socketRef   = useRef<Socket | null>(null);
+  const socketRef    = useRef<Socket | null>(null);
   const onReceiveRef = useRef(onReceive);
+  const [connected, setConnected] = useState(false);
   onReceiveRef.current = onReceive;
 
   useEffect(() => {
@@ -29,10 +30,18 @@ export function useDmSocket({ myId, onReceive }: UseDmSocketOptions) {
     const socket = io(SOCKET_URL, { path: SOCKET_PATH, transports: ["polling", "websocket"] });
     socketRef.current = socket;
 
-    socket.on("connect",    () => socket.emit("register", myId));
+    socket.on("connect", () => {
+      setConnected(true);
+      socket.emit("register", myId);
+    });
+    socket.on("disconnect", () => setConnected(false));
     socket.on("dm_receive", (msg: DmMsg) => onReceiveRef.current(msg));
 
-    return () => { socket.disconnect(); socketRef.current = null; };
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+      setConnected(false);
+    };
   }, [myId]);
 
   const sendDm = useCallback((
@@ -43,5 +52,5 @@ export function useDmSocket({ myId, onReceive }: UseDmSocketOptions) {
     socketRef.current?.emit("dm_send", { to, msgType, ...opts });
   }, []);
 
-  return { sendDm };
+  return { sendDm, connected };
 }

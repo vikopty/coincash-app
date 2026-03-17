@@ -259,6 +259,7 @@ function DmChat({ myId, contactId, contactName, onBack }: { myId: string; contac
   const [sending,   setSending]   = useState(false);
   const [recording, setRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [sendErr,   setSendErr]   = useState(false);
 
   const bottomRef    = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -294,7 +295,7 @@ function DmChat({ myId, contactId, contactName, onBack }: { myId: string; contac
       .catch(() => {});
   }, [myId, contactId, addMsg]);
 
-  const { sendDm } = useDmSocket({
+  const { sendDm, connected } = useDmSocket({
     myId,
     onReceive: (msg) => {
       const isForUs =
@@ -310,13 +311,20 @@ function DmChat({ myId, contactId, contactName, onBack }: { myId: string; contac
 
   async function sendText() {
     if (!text.trim() || sending) return;
+    const toSend = text.trim();
     setSending(true);
+    setSendErr(false);
+    setText("");  // optimistic clear
     try {
-      const { ciphertext, iv } = await encryptMessage(text.trim(), myId, contactId);
+      const { ciphertext, iv } = await encryptMessage(toSend, myId, contactId);
       sendDm(contactId, "text", { ciphertext, iv });
-      setText("");
-    } catch { /* ignore */ }
-    finally { setSending(false); }
+    } catch {
+      setText(toSend);   // restore text so user can retry
+      setSendErr(true);
+      setTimeout(() => setSendErr(false), 3000);
+    } finally {
+      setSending(false);
+    }
   }
 
   async function sendMedia(file: File, msgType: "image" | "audio") {
@@ -376,8 +384,9 @@ function DmChat({ myId, contactId, contactName, onBack }: { myId: string; contac
         <div style={{ flex: 1 }}>
           <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TEXT }}>{contactName || contactId}</p>
           {contactName && <p style={{ margin: 0, fontSize: 10, color: MUTED, fontFamily: "monospace" }}>{contactId}</p>}
-          <p style={{ margin: 0, fontSize: 10, color: TEAL }}>
-            <Lock size={9} style={{ marginRight: 3 }} />Cifrado E2E
+          <p style={{ margin: 0, fontSize: 10, color: connected ? TEAL : "rgba(255,200,0,0.8)" }}>
+            <Lock size={9} style={{ marginRight: 3 }} />
+            {connected ? "Cifrado E2E • En línea" : "Cifrado E2E • Conectando..."}
           </p>
         </div>
       </div>
@@ -411,6 +420,12 @@ function DmChat({ myId, contactId, contactName, onBack }: { myId: string; contac
       {uploading && (
         <div style={{ padding: "6px 16px", background: "rgba(0,255,198,0.08)", textAlign: "center" }}>
           <p style={{ margin: 0, fontSize: 12, color: TEAL }}>Subiendo archivo...</p>
+        </div>
+      )}
+
+      {sendErr && (
+        <div style={{ padding: "6px 16px", background: "rgba(255,80,80,0.12)", textAlign: "center" }}>
+          <p style={{ margin: 0, fontSize: 12, color: "#ff6b6b" }}>Error al enviar. Inténtalo de nuevo.</p>
         </div>
       )}
 
@@ -455,6 +470,23 @@ export default function DmPage() {
   const [myId]                  = useState<string>(getCcId);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [activeChat, setActiveChat] = useState<string | null>(null);
+  const [kbBottom, setKbBottom]     = useState(0);
+
+  // Track virtual keyboard height so the overlay shrinks above it (iOS/Android fix)
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const kh = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
+      setKbBottom(kh);
+    };
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
 
   const loadContacts = useCallback(async () => {
     try {
@@ -478,9 +510,17 @@ export default function DmPage() {
         onRefresh={loadContacts}
       />
 
-      {/* Chat opens as a fixed full-screen overlay so the bottom nav never covers it */}
+      {/* Chat opens as a fixed overlay — bottom adjusts with keyboard so input is always visible */}
       {activeChat && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", flexDirection: "column", background: "#0B0F14" }}>
+        <div style={{
+          position: "fixed",
+          top: 0, left: 0, right: 0,
+          bottom: kbBottom,
+          zIndex: 300,
+          display: "flex",
+          flexDirection: "column",
+          background: "#0B0F14",
+        }}>
           <DmChat
             myId={myId}
             contactId={activeChat}
