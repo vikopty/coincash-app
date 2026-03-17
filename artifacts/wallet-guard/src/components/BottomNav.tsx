@@ -1,6 +1,6 @@
-import { ScanSearch, Settings } from "lucide-react";
+import { ScanSearch, MessageCircle, Settings } from "lucide-react";
 
-export type Tab = "scanner" | "settings";
+export type Tab = "scanner" | "soporte" | "settings";
 
 interface BottomNavProps {
   active: Tab;
@@ -8,9 +8,6 @@ interface BottomNavProps {
 }
 
 export default function BottomNav({ active, onChange }: BottomNavProps) {
-  const isScanner = active === "scanner";
-  const isSettings = active === "settings";
-
   return (
     <nav
       style={{
@@ -27,12 +24,47 @@ export default function BottomNav({ active, onChange }: BottomNavProps) {
         paddingBottom: "env(safe-area-inset-bottom)",
       }}
     >
-      {/* Left spacer — mirrors the Settings button width to keep Scanner centered */}
-      <div style={{ width: "80px", flexShrink: 0 }} />
-
-      {/* Scanner — center */}
+      {/* Scanner — left */}
       <button
         onClick={() => onChange("scanner")}
+        style={{
+          width: "80px",
+          flexShrink: 0,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "4px",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
+          height: "100%",
+        }}
+      >
+        <ScanSearch
+          style={{
+            width: "20px",
+            height: "20px",
+            color: active === "scanner" ? "#00FFC6" : "rgba(255,255,255,0.35)",
+            transition: "color 0.2s",
+          }}
+        />
+        <span
+          style={{
+            fontSize: "10px",
+            fontWeight: active === "scanner" ? 600 : 400,
+            color: active === "scanner" ? "#00FFC6" : "rgba(255,255,255,0.35)",
+            transition: "color 0.2s",
+          }}
+        >
+          Scanner
+        </span>
+      </button>
+
+      {/* Soporte — center (pill) */}
+      <button
+        onClick={() => onChange("soporte")}
         style={{
           flex: 1,
           display: "flex",
@@ -52,21 +84,22 @@ export default function BottomNav({ active, onChange }: BottomNavProps) {
             width: "44px",
             height: "44px",
             borderRadius: "14px",
-            background: isScanner
-              ? "linear-gradient(135deg,#00FFC6 0%,#00B8A9 100%)"
-              : "rgba(0,255,198,0.12)",
+            background:
+              active === "soporte"
+                ? "linear-gradient(135deg,#00FFC6 0%,#00B8A9 100%)"
+                : "rgba(0,255,198,0.12)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: isScanner ? "0 0 18px rgba(0,255,198,0.45)" : "none",
+            boxShadow: active === "soporte" ? "0 0 18px rgba(0,255,198,0.45)" : "none",
             transition: "all 0.2s ease",
           }}
         >
-          <ScanSearch
+          <MessageCircle
             style={{
               width: "20px",
               height: "20px",
-              color: isScanner ? "#0B1220" : "#00FFC6",
+              color: active === "soporte" ? "#0B1220" : "#00FFC6",
             }}
           />
         </div>
@@ -75,10 +108,10 @@ export default function BottomNav({ active, onChange }: BottomNavProps) {
             fontSize: "10px",
             fontWeight: 700,
             letterSpacing: "0.04em",
-            color: isScanner ? "#00FFC6" : "rgba(0,255,198,0.6)",
+            color: active === "soporte" ? "#00FFC6" : "rgba(0,255,198,0.6)",
           }}
         >
-          Scanner
+          Soporte
         </span>
       </button>
 
@@ -104,15 +137,15 @@ export default function BottomNav({ active, onChange }: BottomNavProps) {
           style={{
             width: "20px",
             height: "20px",
-            color: isSettings ? "#00FFC6" : "rgba(255,255,255,0.35)",
+            color: active === "settings" ? "#00FFC6" : "rgba(255,255,255,0.35)",
             transition: "color 0.2s",
           }}
         />
         <span
           style={{
             fontSize: "10px",
-            fontWeight: isSettings ? 600 : 400,
-            color: isSettings ? "#00FFC6" : "rgba(255,255,255,0.35)",
+            fontWeight: active === "settings" ? 600 : 400,
+            color: active === "settings" ? "#00FFC6" : "rgba(255,255,255,0.35)",
             transition: "color 0.2s",
           }}
         >

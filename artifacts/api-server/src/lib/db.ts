@@ -431,6 +431,46 @@ export async function getChatMessages(ccId: string, limit = 100): Promise<ChatMe
   return res.rows;
 }
 
+/** Summary of a support conversation for the admin panel. */
+export interface ConversationSummary {
+  userId:      string;
+  lastMessage: string;
+  lastTime:    Date;
+  lastSender:  string;
+}
+
+/**
+ * For the admin panel: return the latest message per user who has
+ * chatted with CC-SUPPORT, ordered by most-recent first.
+ */
+export async function getConversationsForSupport(): Promise<ConversationSummary[]> {
+  const res = await pool.query<ConversationSummary>(`
+    SELECT DISTINCT ON (user_id)
+      user_id,
+      message       AS "lastMessage",
+      timestamp     AS "lastTime",
+      sender_coincash_id AS "lastSender"
+    FROM (
+      SELECT
+        CASE
+          WHEN sender_coincash_id = 'CC-SUPPORT' THEN receiver_coincash_id
+          ELSE sender_coincash_id
+        END AS user_id,
+        message,
+        timestamp,
+        sender_coincash_id
+      FROM chat_messages
+      WHERE sender_coincash_id = 'CC-SUPPORT'
+         OR receiver_coincash_id = 'CC-SUPPORT'
+    ) sub
+    ORDER BY user_id, "lastTime" DESC
+  `);
+  // Second sort: by time descending across all users
+  return res.rows.sort(
+    (a, b) => new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime(),
+  );
+}
+
 /**
  * Retrieve only the messages exchanged between two specific CoinCash IDs.
  * Ordered chronologically.

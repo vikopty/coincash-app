@@ -14,7 +14,7 @@ import { Router } from "express";
 import {
   saveChatMessage, getChatMessages, getConversation,
   getOrCreateChatUser, getChatUserById, getAllChatUsers,
-  addChatContact, getChatContacts,
+  addChatContact, getChatContacts, getConversationsForSupport,
 } from "../lib/db";
 
 const SUPPORT_ID = "CC-SUPPORT";
@@ -298,6 +298,21 @@ router.get("/chat/messages/:user1/:user2", async (req, res) => {
   } catch (err: any) {
     console.error("[chat] conversation fetch error:", err?.message);
     return res.status(500).json({ error: "Failed to fetch conversation" });
+  }
+});
+
+// ── GET /api/chat/conversations ───────────────────────────────────────────────
+/**
+ * Admin panel: returns list of all users who've messaged CC-SUPPORT,
+ * with their latest message and timestamp. Sorted by most-recent first.
+ */
+router.get("/chat/conversations", async (_req, res) => {
+  try {
+    const conversations = await getConversationsForSupport();
+    return res.json({ conversations });
+  } catch (err: any) {
+    console.error("[chat] conversations error:", err?.message);
+    return res.status(500).json({ error: "Failed to fetch conversations" });
   }
 });
 
