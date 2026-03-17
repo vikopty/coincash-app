@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Camera, Bell, BellOff, Check, Headphones, ChevronRight, Play, Trash2 } from "lucide-react";
+import { Camera, Bell, BellOff, Check, Headphones, ChevronRight, Play, Trash2, KeyRound } from "lucide-react";
 import { API_BASE } from "@/lib/apiConfig";
 
 const TEAL   = "#00FFC6";
@@ -47,9 +47,22 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   const [uploading,    setUploading]    = useState(false);
   const [pushEnabled,  setPushEnabled]  = useState(false);
   const [pushLoading,  setPushLoading]  = useState(false);
-  const [pushSupport,  setPushSupport]  = useState(true);
-  const [saved,        setSaved]        = useState(false);
+  const [pushSupport,    setPushSupport]    = useState(true);
+  const [saved,          setSaved]          = useState(false);
+  const [showRecovery,   setShowRecovery]   = useState(false);
+  const [recoveryInput,  setRecoveryInput]  = useState("");
+  const [recoveryErr,    setRecoveryErr]    = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  function recoverAccount() {
+    const id = recoveryInput.trim().toUpperCase();
+    if (!/^CC-\d{6}$/.test(id)) {
+      setRecoveryErr("Formato inválido. Debe ser CC-XXXXXX (ej: CC-123456)");
+      return;
+    }
+    localStorage.setItem("coincash-cc-id", id);
+    window.location.reload();
+  }
 
   // Check push permission on mount
   useEffect(() => {
@@ -204,7 +217,62 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
         <p style={{ margin: "0 0 4px", fontSize: 12, color: MUTED }}>Tu ID de CoinCash</p>
         <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: TEAL, fontFamily: "monospace" }}>{ccId}</p>
         <p style={{ margin: "6px 0 0", fontSize: 12, color: MUTED }}>Comparte este ID con tus contactos para que puedan enviarte mensajes.</p>
+        <button
+          onClick={() => { setShowRecovery(true); setRecoveryInput(""); setRecoveryErr(""); }}
+          style={{
+            marginTop: 12, display: "flex", alignItems: "center", gap: 6,
+            background: "rgba(0,255,198,0.08)", border: "1px solid rgba(0,255,198,0.2)",
+            borderRadius: 8, padding: "7px 13px", cursor: "pointer",
+            color: TEAL, fontSize: 12, fontWeight: 600,
+          }}
+        >
+          <KeyRound size={13} /> Restaurar cuenta en este dispositivo
+        </button>
       </div>
+
+      {/* Recovery modal */}
+      {showRecovery && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: CARD, borderRadius: 16, padding: 24, width: "100%", maxWidth: 360, border: `1px solid ${BORDER}` }}>
+            <p style={{ margin: "0 0 6px", fontSize: 16, fontWeight: 700, color: TEXT }}>Restaurar cuenta</p>
+            <p style={{ margin: "0 0 16px", fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
+              Introduce tu ID de CoinCash anterior para recuperar tus contactos y mensajes en este dispositivo.
+            </p>
+            <input
+              autoFocus
+              placeholder="CC-123456"
+              value={recoveryInput}
+              onChange={e => { setRecoveryInput(e.target.value.toUpperCase()); setRecoveryErr(""); }}
+              onKeyDown={e => e.key === "Enter" && recoverAccount()}
+              maxLength={9}
+              style={{
+                width: "100%", boxSizing: "border-box",
+                background: "#0B0F14", border: `1px solid ${recoveryErr ? "#ff4444" : BORDER}`,
+                borderRadius: 8, padding: "10px 12px", color: TEXT,
+                fontSize: 16, fontFamily: "monospace", outline: "none",
+              }}
+            />
+            {recoveryErr && <p style={{ color: "#ff6b6b", fontSize: 12, margin: "6px 0 0" }}>{recoveryErr}</p>}
+            <p style={{ margin: "10px 0 0", fontSize: 11, color: "rgba(255,200,0,0.75)" }}>
+              ⚠ Esto reemplazará tu ID actual ({ccId}) en este dispositivo.
+            </p>
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+              <button
+                onClick={() => setShowRecovery(false)}
+                style={{ flex: 1, padding: 10, background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 8, color: MUTED, cursor: "pointer", fontSize: 14 }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={recoverAccount}
+                style={{ flex: 1, padding: 10, background: TEAL, border: "none", borderRadius: 8, color: "#0B1220", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+              >
+                Restaurar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Push notifications */}
       <div style={{ margin: "20px 16px 0", padding: 16, background: CARD, borderRadius: 12, border: `1px solid ${BORDER}` }}>

@@ -372,7 +372,7 @@ function DmChat({ myId, contactId, contactName, onBack }: { myId: string; contac
   const isMine = (msg: DecryptedMsg) => msg.raw.senderId === myId;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: BG }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, background: BG }}>
       {/* Header */}
       <div style={{ padding: "14px 16px", background: CARD, borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
@@ -392,7 +392,7 @@ function DmChat({ myId, contactId, contactName, onBack }: { myId: string; contac
       </div>
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 0" }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "12px 12px 0" }}>
         {msgs.map(m => (
           <div key={m.raw.id} style={{ display: "flex", flexDirection: "column", alignItems: isMine(m) ? "flex-end" : "flex-start", marginBottom: 8 }}>
             <div style={{ maxWidth: "78%", borderRadius: isMine(m) ? "14px 14px 4px 14px" : "14px 14px 14px 4px", background: isMine(m) ? "rgba(0,255,198,0.15)" : "rgba(255,255,255,0.07)", border: `1px solid ${isMine(m) ? "rgba(0,255,198,0.25)" : BORDER}`, padding: m.raw.msgType === "text" ? "8px 12px" : "6px", overflow: "hidden" }}>
