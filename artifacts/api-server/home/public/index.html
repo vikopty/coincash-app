@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CoinCash — Analizador TRON</title>
+  <meta name="description" content="CoinCash Scanner: verifica riesgos, sanciones y blacklist USDT TRC20 en tiempo real." />
+
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="container">
+      <div class="header-inner">
+        <img src="/logo.png" alt="CoinCash" class="logo" />
+        <div class="header-badge">
+          <span class="pulse-dot"></span>
+          <span>Live — TRON Mainnet</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Hero ── -->
+  <section class="hero">
+    <div class="container">
+      <h1>Analiza wallets TRON<br/><span class="accent-teal">en tiempo real</span></h1>
+      <p>Detecta riesgos, sanciones USDT y actividad sospechosa en cualquier dirección TRON con un solo clic.</p>
+      <a href="#scanner" class="hero-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/>
+          <rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/>
+          <path d="M14 14h2m0 0h5m-5 0v2m0 3v2m3-4h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        Abrir Scanner
+      </a>
+    </div>
+  </section>
+
+  <!-- ── Visit Counter ── -->
+  <section class="counter-section">
+    <div class="container">
+      <p class="section-label">Visitas totales</p>
+      <div class="card counter-card">
+        <div class="counter-value" id="counter">0</div>
+        <div class="counter-label">Usuarios que ya analizaron wallets</div>
+        <div class="counter-sublabel" id="counter-sub">Cargando datos en tiempo real...</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Countries ── -->
+  <section class="countries-section">
+    <div class="container">
+      <p class="section-label">Países visitantes</p>
+      <div class="card" style="padding: 24px;">
+        <div class="countries-grid" id="countries-grid">
+          <div class="countries-empty">Registrando visitas...</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Realtime Feed ── -->
+  <section class="realtime-section">
+    <div class="container">
+      <div class="realtime-header">
+        <p class="section-label" style="margin-bottom:0;">Actividad en tiempo real</p>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#94a3b8;">
+          <span class="pulse-dot" style="width:6px;height:6px;"></span>
+          En vivo
+        </div>
+      </div>
+      <div class="card" style="padding: 20px;">
+        <div class="realtime-feed" id="realtime-feed">
+          <div class="countries-empty">Esperando visitantes...</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Advertising ── -->
+  <section class="ads-section">
+    <div class="container">
+      <p class="section-label">Espacios publicitarios</p>
+      <div class="ads-grid">
+        <div class="ad-card" onclick="alert('Contacta: ads@coincash.app')">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+            <rect x="2" y="5" width="20" height="14" rx="2" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M8 12h8M8 9h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span class="ad-label">Banner 300×250</span>
+          <span class="ad-sub">Anunciate aquí</span>
+        </div>
+        <div class="ad-card" onclick="alert('Contacta: ads@coincash.app')">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+          </svg>
+          <span class="ad-label">Patrocinio Premium</span>
+          <span class="ad-sub">Visibilidad crypto</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ── -->
+  <footer>
+    <div class="container">
+      <div class="footer-inner">
+        <img src="/logo.png" alt="CoinCash" class="footer-logo" />
+        <span class="footer-copy">© 2026 CoinCash. Análisis TRON on-chain.</span>
+        <nav class="footer-links">
+          <a href="#">Privacidad</a>
+          <a href="#">Términos</a>
+          <a href="#">Contacto</a>
+        </nav>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/script.js"></script>
+</body>
+</html>
