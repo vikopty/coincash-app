@@ -65,31 +65,6 @@ export default function ScanningAnimation({ isAnalyzing, waitingMessage }: Scann
           fontFamily: "'JetBrains Mono', 'Fira Code', 'Courier New', monospace",
         }}
       >
-        {/* ── Terminal title bar ── */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            padding: "10px 16px",
-            borderBottom: "1px solid rgba(0,255,198,0.12)",
-            background: "rgba(0,255,198,0.06)",
-          }}
-        >
-          {/* Traffic lights */}
-          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-            <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#ff5f57", display: "block" }} />
-            <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#febc2e", display: "block" }} />
-            <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#28c840", display: "block" }} />
-          </div>
-          <span style={{ flex: 1, fontSize: "11px", color: "rgba(0,255,198,0.85)", letterSpacing: "0.03em" }}>
-            coincash-walletguard ~ análisis en progreso
-          </span>
-          <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}>
-            <Loader2 style={{ width: "13px", height: "13px", color: "#00FFC6" }} />
-          </motion.div>
-        </div>
-
         {/* ── Progress bar ── */}
         <div style={{ height: "3px", background: "rgba(255,255,255,0.05)", position: "relative", overflow: "hidden" }}>
           <motion.div
