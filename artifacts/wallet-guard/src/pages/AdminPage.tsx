@@ -164,6 +164,25 @@ export default function AdminPage() {
       .finally(() => setLoadingConv(false));
   }, [selectedUser, loadHistory]);
 
+  // Poll conversation messages every 4 seconds when a chat is open
+  useEffect(() => {
+    if (!selectedUser) return;
+    const t = setInterval(() => {
+      fetch(`${API}/chat/messages/${SUPPORT_ID}/${selectedUser}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (!data.messages) return;
+          setConvMessages((prev) => {
+            const prevIds = new Set(prev.map((m) => m.id));
+            const incoming = data.messages.filter((m: { id: number }) => !prevIds.has(m.id));
+            return incoming.length > 0 ? [...prev, ...incoming] : prev;
+          });
+        })
+        .catch(() => {});
+    }, 4000);
+    return () => clearInterval(t);
+  }, [selectedUser]);
+
   // Track messages for the currently open conversation
   useEffect(() => {
     if (!selectedUser || messages.length === 0) return;

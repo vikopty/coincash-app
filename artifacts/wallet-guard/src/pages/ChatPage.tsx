@@ -126,19 +126,18 @@ export default function ChatPage() {
     fetchHistory(true).finally(() => setLoading(false));
   }, [myCcId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On every socket reconnect, merge any missed messages
+  // On every socket reconnect, immediately merge missed messages
   const prevReconnectRef = useRef(0);
   useEffect(() => {
-    if (reconnectCount <= 1) { prevReconnectRef.current = reconnectCount; return; }
-    if (reconnectCount === prevReconnectRef.current) return;
+    if (reconnectCount === 0 || reconnectCount === prevReconnectRef.current) return;
     prevReconnectRef.current = reconnectCount;
     fetchHistory(false);
   }, [reconnectCount, fetchHistory]);
 
-  // Periodic safety-net poll every 20 seconds
+  // Poll every 4 seconds — catches missed messages even if socket drops
   useEffect(() => {
     if (!myCcId) return;
-    const t = setInterval(() => fetchHistory(false), 20000);
+    const t = setInterval(() => fetchHistory(false), 4000);
     return () => clearInterval(t);
   }, [myCcId, fetchHistory]);
 
