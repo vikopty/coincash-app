@@ -741,8 +741,8 @@ export async function getVisitStats(): Promise<{
 }> {
   const [totalRes, todayRes, onlineRes, countryRes] = await Promise.all([
     pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM visit_log`),
-    pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM visit_log WHERE timestamp >= DATE_TRUNC('day', NOW())`),
-    pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM visit_log WHERE timestamp >= NOW() - INTERVAL '5 minutes'`),
+    pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM visit_log WHERE created_at >= DATE_TRUNC('day', NOW())`),
+    pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM visit_log WHERE created_at >= NOW() - INTERVAL '5 minutes'`),
     pool.query<{ name: string; code: string; count: string }>(`
       SELECT country AS name, country_code AS code, COUNT(*) AS count
         FROM visit_log
