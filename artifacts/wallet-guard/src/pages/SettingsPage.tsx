@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Camera, Bell, BellOff, Check, Headphones, ChevronRight, Trash2, Users } from "lucide-react";
+import { Camera, Bell, BellOff, Check, Headphones, ChevronRight, Trash2 } from "lucide-react";
 import { API_BASE } from "@/lib/apiConfig";
 
 const TEAL   = "#00FFC6";
@@ -49,15 +49,15 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
   const [pushLoading,  setPushLoading]  = useState(false);
   const [pushSupport,  setPushSupport]  = useState(true);
   const [saved,        setSaved]        = useState(false);
-  const [visitTotal,   setVisitTotal]   = useState<number | null>(null);
+  const [visitStats, setVisitStats] = useState<{ total: number; today: number; online: number; countries: { name: string; code: string; count: number }[] } | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Fetch visit count
+  // Fetch visit stats
   useEffect(() => {
     fetch(`${API_BASE}/visit/stats`)
       .then(r => r.json())
-      .then(d => setVisitTotal(d.total ?? null))
+      .then(d => setVisitStats(d))
       .catch(() => {});
   }, []);
 
@@ -249,17 +249,44 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
       </div>
 
       {/* Contador de visitas */}
-      {visitTotal !== null && (
-        <div style={{ margin: "20px 16px 0", padding: "12px 16px", background: CARD, borderRadius: 12, border: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(0,255,198,0.1)", border: "1px solid rgba(0,255,198,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <Users size={16} style={{ color: TEAL }} />
+      {visitStats && (
+        <div style={{ margin: "20px 16px 0", background: CARD, borderRadius: 14, border: `1px solid rgba(0,255,198,0.18)`, overflow: "hidden" }}>
+          {/* Hoy / Total */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: `1px solid ${BORDER}` }}>
+            {[{ label: "Hoy", value: visitStats.today }, { label: "Total", value: visitStats.total }].map((item, i) => (
+              <div key={i} style={{ padding: "12px 16px", borderRight: i === 0 ? `1px solid ${BORDER}` : "none" }}>
+                <p style={{ margin: 0, fontSize: 11, color: MUTED, textTransform: "uppercase", letterSpacing: "0.07em" }}>{item.label}</p>
+                <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: TEAL, fontFamily: "monospace", letterSpacing: "-0.03em" }}>
+                  {item.value.toLocaleString()}
+                </p>
+              </div>
+            ))}
           </div>
-          <div>
-            <p style={{ margin: 0, fontSize: 11, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em" }}>Visitas totales</p>
-            <p style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 800, color: TEAL, fontFamily: "monospace" }}>
-              {visitTotal.toLocaleString()}
-            </p>
+
+          {/* En línea */}
+          <div style={{ padding: "10px 16px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 22 }}>🌐</span>
+            <div>
+              <p style={{ margin: 0, fontSize: 11, color: MUTED, textTransform: "uppercase", letterSpacing: "0.07em" }}>En línea</p>
+              <p style={{ margin: "2px 0 0", fontSize: 18, fontWeight: 700, color: "#fff", fontFamily: "monospace" }}>
+                {visitStats.online}
+              </p>
+            </div>
           </div>
+
+          {/* Países */}
+          {visitStats.countries.filter(c => c.code !== "xx").slice(0, 5).map((c) => {
+            const flag = c.code.toUpperCase().replace(/./g, ch =>
+              String.fromCodePoint(ch.charCodeAt(0) + 127397)
+            );
+            return (
+              <div key={c.code} style={{ padding: "8px 16px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${BORDER}` }}>
+                <span style={{ fontSize: 20, flexShrink: 0 }}>{flag}</span>
+                <span style={{ fontSize: 13, color: TEXT, flex: 1 }}>{c.name}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: TEAL, fontFamily: "monospace" }}>{c.count}</span>
+              </div>
+            );
+          })}
         </div>
       )}
 

@@ -732,20 +732,29 @@ export async function hasPinSet(ccId: string): Promise<boolean> {
   return res.rows[0]?.exists ?? false;
 }
 
-/** Return total visits and per-country breakdown. */
+/** Return total visits, today's visits, online count and per-country breakdown. */
 export async function getVisitStats(): Promise<{
   total: number;
+  today: number;
+  online: number;
   countries: { name: string; code: string; count: number }[];
 }> {
-  const totalRes = await pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM visit_log`);
-  const total = parseInt(totalRes.rows[0]?.total ?? "0", 10);
+  const [totalRes, todayRes, onlineRes, countryRes] = await Promise.all([
+    pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM visit_log`),
+    pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM visit_log WHERE timestamp >= DATE_TRUNC('day', NOW())`),
+    pool.query<{ total: string }>(`SELECT COUNT(*) AS total FROM visit_log WHERE timestamp >= NOW() - INTERVAL '5 minutes'`),
+    pool.query<{ name: string; code: string; count: string }>(`
+      SELECT country AS name, country_code AS code, COUNT(*) AS count
+        FROM visit_log
+       GROUP BY country, country_code
+       ORDER BY count DESC
+       LIMIT 5
+    `),
+  ]);
 
-  const countryRes = await pool.query<{ name: string; code: string; count: string }>(`
-    SELECT country AS name, country_code AS code, COUNT(*) AS count
-      FROM visit_log
-     GROUP BY country, country_code
-     ORDER BY count DESC
-  `);
+  const total  = parseInt(totalRes.rows[0]?.total  ?? "0", 10);
+  const today  = parseInt(todayRes.rows[0]?.total  ?? "0", 10);
+  const online = parseInt(onlineRes.rows[0]?.total ?? "0", 10);
 
   const countries = countryRes.rows.map((r) => ({
     name:  r.name,
@@ -753,5 +762,5 @@ export async function getVisitStats(): Promise<{
     count: parseInt(r.count, 10),
   }));
 
-  return { total, countries };
+  return { total, today, online, countries };
 }
