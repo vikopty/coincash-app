@@ -9,7 +9,6 @@ import ChatPage from "@/pages/ChatPage";
 import AdminPage from "@/pages/AdminPage";
 import SettingsPage from "@/pages/SettingsPage";
 import VideoPage from "@/pages/VideoPage";
-import ScanAdminPage from "@/pages/ScanAdminPage";
 import IOSInstallBanner from "@/components/IOSInstallBanner";
 import { API_BASE } from "@/lib/apiConfig";
 
@@ -29,18 +28,16 @@ function MainApp() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  const isAdmin     = hash === "#soporte-admin";
-  const isVideo     = hash === "#video";
-  const isScanAdmin = hash === "#scan-admin";
+  const isAdmin = hash === "#soporte-admin";
+  const isVideo = hash === "#video";
 
   useEffect(() => {
-    if (isAdmin || isVideo || isScanAdmin) return;
+    if (isAdmin || isVideo) return;
     fetch(`${API_BASE}/visit`, { method: "POST" }).catch(() => {});
-  }, [isAdmin, isVideo, isScanAdmin]);
+  }, [isAdmin, isVideo]);
 
-  if (isAdmin)     return <AdminPage />;
-  if (isVideo)     return <VideoPage />;
-  if (isScanAdmin) return <ScanAdminPage />;
+  if (isAdmin) return <AdminPage />;
+  if (isVideo) return <VideoPage />;
 
   return (
     <div style={{ minHeight: "100vh", background: "#0B0F14" }}>

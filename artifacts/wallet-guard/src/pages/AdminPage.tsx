@@ -70,6 +70,24 @@ function timeStr(ts: string) {
 
 interface CountryRecord { name: string; code: string; count: number; }
 interface VisitStats   { total: number; countries: CountryRecord[]; }
+interface ScanStats    { total: number; today: number; byCountry: { name: string; code: string; count: number }[]; recent: { id: number; wallet: string; country: string; country_code: string; scanned_at: string }[]; }
+
+const SCAN_KEY = "CoinCashAdmin2026";
+
+function flagEmoji(code: string) {
+  if (!code || code === "xx") return "🌐";
+  return code.toUpperCase().replace(/./g, ch => String.fromCodePoint(ch.charCodeAt(0) + 127397));
+}
+
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "ahora";
+  if (m < 60) return `hace ${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `hace ${h}h`;
+  return `hace ${Math.floor(h / 24)}d`;
+}
 
 export default function AdminPage() {
   const [conversations, setConversations] = useState<ConvSummary[]>([]);
@@ -78,8 +96,9 @@ export default function AdminPage() {
   const [input, setInput]                 = useState("");
   const [loadingConv, setLoadingConv]     = useState(false);
   const [unreadUsers, setUnreadUsers]     = useState<Set<string>>(new Set());
-  const [adminTab, setAdminTab]           = useState<"mensajes" | "visitantes">("mensajes");
+  const [adminTab, setAdminTab]           = useState<"mensajes" | "visitantes" | "scans">("mensajes");
   const [visitStats, setVisitStats]       = useState<VisitStats>({ total: 0, countries: [] });
+  const [scanStats,  setScanStats]        = useState<ScanStats | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // ── Visitor stats polling ─────────────────────────────────────────────────
@@ -96,6 +115,21 @@ export default function AdminPage() {
     const t = setInterval(fetchVisitStats, 5000);
     return () => clearInterval(t);
   }, [fetchVisitStats]);
+
+  // ── Scan stats polling ────────────────────────────────────────────────────
+  const fetchScanStats = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API}/scan/stats?key=${SCAN_KEY}`);
+      const data = await res.json();
+      if (typeof data.total === "number") setScanStats(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchScanStats();
+    const t = setInterval(fetchScanStats, 10000);
+    return () => clearInterval(t);
+  }, [fetchScanStats]);
 
   const { connected, messages, sendMessage, loadHistory } = useChatSocket(ADMIN_CC_ID);
 
@@ -202,22 +236,26 @@ export default function AdminPage() {
           <div style={{ fontSize: 11, color: "#4B5563", margin: "6px 0 12px" }}>Panel de agente · {ADMIN_CC_ID}</div>
 
           {/* Tab bar */}
-          <div style={{ display: "flex", gap: 4 }}>
-            {(["mensajes", "visitantes"] as const).map((t) => (
+          <div style={{ display: "flex", gap: 0 }}>
+            {([
+              { key: "mensajes",   label: "💬 Chats" },
+              { key: "visitantes", label: "🌍 Visitas" },
+              { key: "scans",      label: "🔍 Scans" },
+            ] as const).map((t) => (
               <button
-                key={t}
-                onClick={() => setAdminTab(t)}
+                key={t.key}
+                onClick={() => setAdminTab(t.key)}
                 style={{
                   flex: 1, padding: "8px 0", border: "none", cursor: "pointer",
-                  background: "transparent", fontFamily: "inherit", fontSize: 13, fontWeight: 600,
-                  color: adminTab === t ? "#00FFC6" : "#6B7280",
-                  borderBottom: adminTab === t ? "2px solid #00FFC6" : "2px solid transparent",
-                  transition: "all 0.2s", textTransform: "capitalize",
+                  background: "transparent", fontFamily: "inherit", fontSize: 12, fontWeight: 600,
+                  color: adminTab === t.key ? "#00FFC6" : "#6B7280",
+                  borderBottom: adminTab === t.key ? "2px solid #00FFC6" : "2px solid transparent",
+                  transition: "all 0.2s",
                 }}
               >
-                {t === "mensajes" ? "💬 Mensajes" : "🌍 Visitantes"}
-                {t === "mensajes" && unreadUsers.size > 0 && (
-                  <span style={{ marginLeft: 6, background: "#00FFC6", color: "#0B1220", borderRadius: 10, padding: "1px 6px", fontSize: 10, fontWeight: 700 }}>
+                {t.label}
+                {t.key === "mensajes" && unreadUsers.size > 0 && (
+                  <span style={{ marginLeft: 4, background: "#00FFC6", color: "#0B1220", borderRadius: 10, padding: "1px 5px", fontSize: 10, fontWeight: 700 }}>
                     {unreadUsers.size}
                   </span>
                 )}
@@ -320,6 +358,61 @@ export default function AdminPage() {
                   );
                 })}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Scan analytics panel ── */}
+        {adminTab === "scans" && (
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+            {!scanStats ? (
+              <div style={{ textAlign: "center", padding: "40px", color: "#4B5563" }}>Cargando…</div>
+            ) : (
+              <>
+                {/* Total / Hoy */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                  {[{ label: "Total scans", value: scanStats.total }, { label: "Hoy", value: scanStats.today }].map((item, i) => (
+                    <div key={i} style={{ background: "linear-gradient(135deg,rgba(0,255,198,0.08),rgba(0,184,169,0.04))", border: "1px solid rgba(0,255,198,0.2)", borderRadius: 14, padding: "14px" }}>
+                      <div style={{ fontSize: 10, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{item.label}</div>
+                      <div style={{ fontSize: 32, fontWeight: 800, color: "#00FFC6", fontFamily: "monospace", lineHeight: 1 }}>{item.value.toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Países */}
+                {scanStats.byCountry.filter(c => c.code !== "xx").length > 0 && (
+                  <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                    <div style={{ padding: "10px 14px 6px", fontSize: 10, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>Por país</div>
+                    {scanStats.byCountry.filter(c => c.code !== "xx").map(c => (
+                      <div key={c.code} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                        <span style={{ fontSize: 18 }}>{flagEmoji(c.code)}</span>
+                        <span style={{ flex: 1, fontSize: 13, color: "#E5E7EB" }}>{c.name}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#00FFC6", fontFamily: "monospace" }}>{c.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Actividad reciente */}
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, overflow: "hidden" }}>
+                  <div style={{ padding: "10px 14px 6px", fontSize: 10, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                    Actividad reciente ({scanStats.recent.length})
+                  </div>
+                  {scanStats.recent.length === 0 && (
+                    <div style={{ padding: "20px 14px", fontSize: 13, color: "#4B5563", textAlign: "center" }}>Sin scans aún</div>
+                  )}
+                  {scanStats.recent.map(r => (
+                    <div key={r.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                      <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{flagEmoji(r.country_code)}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontFamily: "monospace", color: "#00FFC6", wordBreak: "break-all" }}>{r.wallet}</div>
+                        <div style={{ fontSize: 10, color: "#6B7280", marginTop: 1 }}>{r.country}</div>
+                      </div>
+                      <span style={{ fontSize: 10, color: "#6B7280", flexShrink: 0, whiteSpace: "nowrap" }}>{timeAgo(r.scanned_at)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         )}
