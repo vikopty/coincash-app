@@ -382,8 +382,8 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
         </div>
       </div>
 
-      {/* Contador de visitas */}
-      {visitStats && (
+      {/* Contador de visitas — oculto temporalmente */}
+      {false && visitStats && (
         <div style={{ margin: "20px 16px 0", background: CARD, borderRadius: 14, border: `1px solid rgba(0,255,198,0.18)`, overflow: "hidden" }}>
           {/* Hoy / Total */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: `1px solid ${BORDER}` }}>
