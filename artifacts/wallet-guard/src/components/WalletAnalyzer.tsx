@@ -355,11 +355,9 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
         fetchTRC20BalanceFallback("TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj"),
       ]);
       balanceUSDT = Math.max(b1, b2);
-
-      if (balanceUSDT <= 0) {
-        throw new Error("Dirección no encontrada en la red TRON");
-      }
-      detectedViaTRC20 = true;
+      // Even with 0 balance, the address is a valid TRON format — proceed to show the report.
+      // A zero balance just means the wallet is new or has no recorded activity.
+      detectedViaTRC20 = balanceUSDT > 0;
     }
 
     // 2. Transaction counts via TronGrid
