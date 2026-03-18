@@ -81,9 +81,9 @@ async function syncBlacklist(): Promise<void> {
   }
 }
 
-// Run on startup, then every 5 minutes
+// Run on startup, then every 15 minutes — reduced from 5 min to ease TronGrid rate limits
 syncBlacklist();
-setInterval(syncBlacklist, 5 * 60 * 1000);
+setInterval(syncBlacklist, 15 * 60 * 1000);
 
 // GET /api/stats — aggregate stats for the dashboard
 router.get("/stats", async (_req, res) => {

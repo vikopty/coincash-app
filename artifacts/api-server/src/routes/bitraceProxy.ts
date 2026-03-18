@@ -10,7 +10,7 @@ const USDT_SECONDARY  = "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj";
 const FETCH_LIMIT     = 200; // events per TronGrid page
 const BALANCE_BATCH   = 10;  // concurrent balance requests
 const BALANCE_GAP_MS  = 80;  // ms between balance batches
-const CACHE_TTL_MS    = 60_000; // 60 second cache
+const CACHE_TTL_MS    = 10 * 60_000; // 10 minute cache — prevents TronGrid 429 floods
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface FrozenWallet {
@@ -24,10 +24,11 @@ export interface FrozenWallet {
 }
 
 // ── In-memory cache ───────────────────────────────────────────────────────────
-let cacheData:      FrozenWallet[] | null = null;
-let cacheFetchedAt: number                = 0;
-let cacheTotal:     number                = 0;
-let refreshing                            = false;
+let cacheData:        FrozenWallet[] | null = null;
+let cacheFetchedAt:   number                = 0;
+let cacheTotal:       number                = 0;
+let refreshing                              = false;
+let backoffUntil:     number                = 0; // epoch ms — skip refresh if TronGrid is angry
 
 // ── Address conversion: Ethereum 0x hex → TRON T... Base58 ───────────────────
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -64,6 +65,11 @@ async function tronFetch(url: string, timeout = 10_000): Promise<any> {
     headers: tronHeaders(),
     signal: AbortSignal.timeout(timeout),
   });
+  if (res.status === 429) {
+    // Back off for 15 minutes when rate-limited
+    backoffUntil = Date.now() + 15 * 60_000;
+    throw new Error(`TronGrid HTTP 429`);
+  }
   if (!res.ok) throw new Error(`TronGrid HTTP ${res.status}`);
   return res.json();
 }
@@ -157,6 +163,10 @@ function fmtDate(ts: number): string {
 // ── Main refresh logic ────────────────────────────────────────────────────────
 async function refreshCache(): Promise<void> {
   if (refreshing) return;
+  if (Date.now() < backoffUntil) {
+    console.log(`[bitrace] Skipping refresh — TronGrid backoff until ${new Date(backoffUntil).toISOString()}`);
+    return;
+  }
   refreshing = true;
 
   try {
