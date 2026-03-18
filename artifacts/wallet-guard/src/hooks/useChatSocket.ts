@@ -11,9 +11,10 @@ export interface ChatMessage {
 }
 
 export function useChatSocket(myCcId: string | null) {
-  const socketRef = useRef<Socket | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const socketRef      = useRef<Socket | null>(null);
+  const [connected, setConnected]       = useState(false);
+  const [messages,  setMessages]        = useState<ChatMessage[]>([]);
+  const [reconnectCount, setReconnectCount] = useState(0);
 
   useEffect(() => {
     if (!myCcId) return;
@@ -22,8 +23,9 @@ export function useChatSocket(myCcId: string | null) {
       path: SOCKET_PATH,
       transports: ["websocket", "polling"],
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
     socketRef.current = socket;
@@ -31,6 +33,7 @@ export function useChatSocket(myCcId: string | null) {
     socket.on("connect", () => {
       setConnected(true);
       socket.emit("register", myCcId);
+      setReconnectCount((n) => n + 1);
     });
 
     socket.on("disconnect", () => setConnected(false));
@@ -64,5 +67,16 @@ export function useChatSocket(myCcId: string | null) {
     setMessages(msgs);
   }, []);
 
-  return { connected, messages, sendMessage, loadHistory };
+  const mergeMessages = useCallback((msgs: ChatMessage[]) => {
+    setMessages((prev) => {
+      const existingIds = new Set(prev.map((m) => m.id));
+      const incoming    = msgs.filter((m) => !existingIds.has(m.id));
+      if (incoming.length === 0) return prev;
+      return [...prev, ...incoming].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      );
+    });
+  }, []);
+
+  return { connected, messages, sendMessage, loadHistory, mergeMessages, reconnectCount };
 }

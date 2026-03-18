@@ -132,6 +132,15 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
           setPhotoUrl(url);
           setPhotoStored(true);
           flashSaved();
+          // Sync photo to backend so admin can see it in the chat
+          const storedCcId = localStorage.getItem("coincash-cc-id");
+          if (storedCcId) {
+            fetch(`${API_BASE}/chat/update-photo`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ coincashId: storedCcId, photoUrl: url }),
+            }).catch(() => {});
+          }
         } catch { alert("No se pudo subir la foto"); }
         finally { setUploading(false); }
       }, "image/jpeg", 0.9);

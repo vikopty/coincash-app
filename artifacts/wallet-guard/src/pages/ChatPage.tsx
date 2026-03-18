@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Paperclip } from "lucide-react";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import { API_BASE } from "@/lib/apiConfig";
@@ -74,7 +74,20 @@ export default function ChatPage() {
   const bottomRef  = useRef<HTMLDivElement>(null);
   const fileRef    = useRef<HTMLInputElement>(null);
 
-  const { connected, messages, sendMessage, loadHistory } = useChatSocket(myCcId);
+  const { connected, messages, sendMessage, loadHistory, mergeMessages, reconnectCount } = useChatSocket(myCcId);
+
+  // Fetch history from server and merge into message state
+  const fetchHistory = useCallback(async (replace = false) => {
+    if (!myCcId) return;
+    try {
+      const res  = await fetch(`${API}/chat/messages/${myCcId}/${SUPPORT_ID}`);
+      const data = await res.json();
+      if (data.messages) {
+        if (replace) loadHistory(data.messages);
+        else mergeMessages(data.messages);
+      }
+    } catch { /* ignore */ }
+  }, [myCcId, loadHistory, mergeMessages]);
 
   // Init: get or create CC-ID
   useEffect(() => {
@@ -106,19 +119,28 @@ export default function ChatPage() {
     })();
   }, []);
 
-  // Load history once CC-ID is set
+  // Initial history load
   useEffect(() => {
     if (!myCcId) return;
-    (async () => {
-      setLoading(true);
-      try {
-        const res  = await fetch(`${API}/chat/messages/${myCcId}/${SUPPORT_ID}`);
-        const data = await res.json();
-        if (data.messages) loadHistory(data.messages);
-      } catch { /* ignore */ }
-      finally { setLoading(false); }
-    })();
-  }, [myCcId, loadHistory]);
+    setLoading(true);
+    fetchHistory(true).finally(() => setLoading(false));
+  }, [myCcId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On every socket reconnect, merge any missed messages
+  const prevReconnectRef = useRef(0);
+  useEffect(() => {
+    if (reconnectCount <= 1) { prevReconnectRef.current = reconnectCount; return; }
+    if (reconnectCount === prevReconnectRef.current) return;
+    prevReconnectRef.current = reconnectCount;
+    fetchHistory(false);
+  }, [reconnectCount, fetchHistory]);
+
+  // Periodic safety-net poll every 20 seconds
+  useEffect(() => {
+    if (!myCcId) return;
+    const t = setInterval(() => fetchHistory(false), 20000);
+    return () => clearInterval(t);
+  }, [myCcId, fetchHistory]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
