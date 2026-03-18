@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { API_BASE } from "@/lib/apiConfig";
 import { ScanSearch, Loader2, QrCode, X, CheckCircle2, AlertTriangle, ShieldAlert,
          Copy, CheckCheck, Activity, Zap, Hash, Shield } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -128,20 +129,22 @@ function acquireRateLimit(): Promise<void> {
   return wait > 0 ? new Promise((r) => setTimeout(r, wait)) : Promise.resolve();
 }
 
-const TRON_RETRY_DELAY_MS = 10_000; // wait 10 s on 429
-const TRON_MAX_RETRIES    = 2;
+// All TronGrid calls go through the backend proxy — API key stays on server,
+// results are cached 30 s, so repeated scans never hit the rate limit.
+const TRON_PROXY = `${API_BASE}/tron`;
+
+const TRON_RETRY_DELAY_MS = 3_000; // 3 s between retries (server caches help a lot)
+const TRON_MAX_RETRIES    = 3;
 
 async function tronRequest(
   url: string,
   options: RequestInit = {},
   onWaiting?: (msg: string | null) => void,
 ): Promise<any> {
-  const apiKey = import.meta.env.VITE_TRON_API_KEY;
   const baseHeaders: Record<string, string> = {
     Accept: "application/json",
     ...(options.headers as Record<string, string> | undefined),
   };
-  if (apiKey) baseHeaders["TRON-PRO-API-KEY"] = apiKey;
 
   for (let attempt = 0; attempt <= TRON_MAX_RETRIES; attempt++) {
     await acquireRateLimit();
@@ -243,7 +246,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       const usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
       const param = tronBase58ToAbiParam(addr);
       const data = await tronRequest(
-        "https://api.trongrid.io/wallet/triggerconstantcontract",
+        `${TRON_PROXY}/wallet/triggerconstantcontract`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -286,7 +289,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
     // 1. Account info + blacklist checks in parallel
     const [accountData, isFrozen, isInBlacklistDB] = await Promise.all([
-      tronGridFetch(`https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}`),
+      tronGridFetch(`${TRON_PROXY}/v1/accounts/${encodeURIComponent(addr)}`),
       checkUsdtBlacklist(addr),
       checkBlacklistDB(),
     ]);
@@ -297,7 +300,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
       try {
         const param = tronBase58ToAbiParam(addr);
         const data = await tronRequest(
-          "https://api.trongrid.io/wallet/triggerconstantcontract",
+          `${TRON_PROXY}/wallet/triggerconstantcontract`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -367,7 +370,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     let txIn = 0;
     let txOut = 0;
     try {
-      const base = `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}/transactions?limit=1&only_confirmed=true`;
+      const base = `${TRON_PROXY}/v1/accounts/${encodeURIComponent(addr)}/transactions?limit=1&only_confirmed=true`;
       const [txTotalData, txInData, txOutData] = await Promise.all([
         tronGridFetch(base),
         tronGridFetch(`${base}&only_to=true`),
@@ -384,7 +387,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     let lastTxDate = Date.now();
     try {
       const latestData = await tronGridFetch(
-        `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}/transactions/trc20?limit=1&contract_address=${usdtContract}&only_confirmed=true`
+        `${TRON_PROXY}/v1/accounts/${encodeURIComponent(addr)}/transactions/trc20?limit=1&contract_address=${usdtContract}&only_confirmed=true`
       );
       const first = latestData.data?.[0];
       if (first?.block_timestamp) lastTxDate = first.block_timestamp;
@@ -403,7 +406,7 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     let fingerprint: string | null = null;
     const maxPages = 3;
     for (let i = 0; i < maxPages; i++) {
-      let url = `https://api.trongrid.io/v1/accounts/${encodeURIComponent(addr)}/transactions/trc20?limit=50&contract_address=${usdtContract}&only_confirmed=true`;
+      let url = `${TRON_PROXY}/v1/accounts/${encodeURIComponent(addr)}/transactions/trc20?limit=50&contract_address=${usdtContract}&only_confirmed=true`;
       if (fingerprint) url += `&fingerprint=${encodeURIComponent(fingerprint)}`;
       try {
         const data = await tronGridFetch(url);

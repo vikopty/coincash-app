@@ -14,6 +14,7 @@ import pushRouter from "./push";
 import visitsRouter from "./visits";
 import authRouter from "./auth";
 import scanRouter from "./scan";
+import tronRouter from "./tron";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(pushRouter);
 router.use(visitsRouter);
 router.use(authRouter);
 router.use(scanRouter);
+router.use(tronRouter);
 
 export default router;
