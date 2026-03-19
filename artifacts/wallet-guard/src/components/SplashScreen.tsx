@@ -148,7 +148,7 @@ export default function SplashScreen({ onDone }: Props) {
             {/* Dot: absolute, centered on the i's tittle position */}
             <span style={{
               position:     "absolute",
-              top:          "3px",
+              top:          "-10px",
               left:         "50%",
               display:      "block",
               width:        8,
