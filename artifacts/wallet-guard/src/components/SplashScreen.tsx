@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 
 const KEYFRAMES = `
 @keyframes cc-splash-in {
@@ -24,18 +24,8 @@ const KEYFRAMES = `
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes cc-dot-pulse {
-  0%, 100% {
-    scale: 1;
-    box-shadow: 0 0 4px rgba(0,255,198,0.4);
-  }
-  50% {
-    scale: 1.2;
-    box-shadow: 0 0 12px rgba(0,255,198,1);
-  }
-}
-@keyframes cc-bar-fill {
-  from { width: 0%; }
-  to   { width: 100%; }
+  0%, 100% { scale: 1;   box-shadow: 0 0 4px rgba(0,255,198,0.4); }
+  50%       { scale: 1.2; box-shadow: 0 0 12px rgba(0,255,198,1);  }
 }
 `;
 
@@ -48,72 +38,83 @@ function injectKeyframes() {
   document.head.appendChild(s);
 }
 
+// Non-linear increment per 50 ms tick to simulate realistic loading
+function getIncrement(p: number): number {
+  if (p < 30) return 1.00;   // fast:     0→30 in ~1.5 s
+  if (p < 70) return 0.55;   // moderate: 30→70 in ~3.6 s
+  if (p < 90) return 0.28;   // slow:     70→90 in ~3.6 s
+  return 0.13;               // smooth:   90→100 in ~3.8 s
+}
+
 const MESSAGES = [
   "Conectando a la blockchain TRON...",
   "Sincronizando datos en tiempo real...",
   "Estableciendo conexión segura...",
   "Cargando información...",
+  "Inicializando sistema...",
 ];
-const FINAL_MSG   = "Listo para analizar";
-const MSG_INTERVAL = 1500;   // ms between message changes
-const MIN_MS       = 4500;   // total splash duration
-const FADEOUT_MS   = 600;    // screen fade-out duration
-const MSG_FADE_MS  = 300;    // message cross-fade duration
+const FINAL_MSG    = "Sistema listo";
+const MSG_FADE_MS  = 250;
+const TOTAL_MS     = 10_000;   // 10 s visible splash
+const FADEOUT_MS   = 600;
 
-interface Props {
-  onDone: () => void;
-}
+interface Props { onDone: () => void; }
 
 export default function SplashScreen({ onDone }: Props) {
-  const [phase, setPhase]       = useState<"in" | "hold" | "out">("in");
-  const [msgIndex, setMsgIndex] = useState(0);
+  const [phase, setPhase]         = useState<"in" | "hold" | "out">("in");
+  const [progress, setProgress]   = useState(0);
+  const [msgIdx, setMsgIdx]       = useState(0);
   const [msgVisible, setMsgVisible] = useState(true);
-  const [showFinal, setShowFinal]   = useState(false);
+  const [showFinal, setShowFinal] = useState(false);
 
-  // Screen lifecycle
+  const progressRef  = useRef(0);
+  const doneRef      = useRef(false);
+
+  // ── Screen lifecycle ─────────────────────────────────────────────────────
   useEffect(() => {
     injectKeyframes();
     const t1 = setTimeout(() => setPhase("hold"), 500);
-    const t2 = setTimeout(() => setPhase("out"), MIN_MS);
-    const t3 = setTimeout(() => onDone(), MIN_MS + FADEOUT_MS);
+    const t2 = setTimeout(() => setPhase("out"),  TOTAL_MS);
+    const t3 = setTimeout(() => onDone(),         TOTAL_MS + FADEOUT_MS);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [onDone]);
 
-  // Message rotation with cross-fade
-  const advanceMessage = useCallback(() => {
-    setMsgVisible(false);
-    setTimeout(() => {
-      setMsgIndex(prev => {
-        const next = prev + 1;
-        if (next >= MESSAGES.length) {
-          setShowFinal(true);
-          return prev;
-        }
-        return next;
-      });
-      setMsgVisible(true);
-    }, MSG_FADE_MS);
+  // ── Non-linear progress ticker (50 ms) ───────────────────────────────────
+  useEffect(() => {
+    const tick = setInterval(() => {
+      if (progressRef.current >= 100) {
+        clearInterval(tick);
+        return;
+      }
+      const inc = getIncrement(progressRef.current);
+      progressRef.current = Math.min(100, progressRef.current + inc);
+      setProgress(Math.floor(progressRef.current));
+
+      if (progressRef.current >= 100 && !doneRef.current) {
+        doneRef.current = true;
+        // Fade out current message, show final
+        setMsgVisible(false);
+        setTimeout(() => { setShowFinal(true); setMsgVisible(true); }, MSG_FADE_MS);
+      }
+    }, 50);
+    return () => clearInterval(tick);
   }, []);
 
+  // ── Message rotation (every 1.5 s) ───────────────────────────────────────
   useEffect(() => {
-    // Start rotating after the splash fade-in settles
-    const startDelay = setTimeout(() => {
-      const interval = setInterval(advanceMessage, MSG_INTERVAL);
-      // Show final message when bar completes
-      const finalTimer = setTimeout(() => {
-        clearInterval(interval);
-        setMsgVisible(false);
-        setTimeout(() => {
-          setShowFinal(true);
-          setMsgVisible(true);
-        }, MSG_FADE_MS);
-      }, MIN_MS - 700);
-      return () => { clearInterval(interval); clearTimeout(finalTimer); };
-    }, 800);
-    return () => clearTimeout(startDelay);
-  }, [advanceMessage]);
+    const rotate = setInterval(() => {
+      if (showFinal) return;
+      setMsgVisible(false);
+      setTimeout(() => {
+        setMsgIdx(i => (i + 1) % MESSAGES.length);
+        setMsgVisible(true);
+      }, MSG_FADE_MS);
+    }, 1500);
+    return () => clearInterval(rotate);
+  }, [showFinal]);
 
-  const displayText = showFinal ? FINAL_MSG : MESSAGES[msgIndex];
+  const displayText = showFinal ? FINAL_MSG : MESSAGES[msgIdx];
+  const pct         = Math.min(100, progress);
 
   return (
     <div
@@ -132,20 +133,18 @@ export default function SplashScreen({ onDone }: Props) {
         pointerEvents: phase === "out" ? "none" : "all",
       }}
     >
-      {/* Ambient radial glow */}
+      {/* Ambient glow */}
       <div style={{
         position:      "absolute",
-        top:           "38%",
-        left:          "50%",
+        top: "38%", left: "50%",
         transform:     "translate(-50%, -50%)",
-        width:         340,
-        height:        340,
+        width: 340, height: 340,
         borderRadius:  "50%",
         background:    "radial-gradient(circle, rgba(0,255,198,0.09) 0%, transparent 70%)",
         pointerEvents: "none",
       }} />
 
-      {/* Content wrapper */}
+      {/* Content */}
       <div style={{
         display:       "flex",
         flexDirection: "column",
@@ -155,25 +154,24 @@ export default function SplashScreen({ onDone }: Props) {
         padding:       "0 24px",
       }}>
 
-        {/* ── Icon logo ── */}
+        {/* Icon */}
         <img
           src="/cc-logo-icon-orig.png"
           alt="CoinCash icon"
           style={{
-            width:        140,
-            height:       140,
+            width: 140, height: 140,
             objectFit:    "contain",
             mixBlendMode: "screen",
             animation:    "cc-icon-glow 2.6s ease-in-out infinite",
           }}
         />
 
-        {/* ── Wordmark ── */}
+        {/* Wordmark */}
         <div style={{
           display:       "inline-flex",
           alignItems:    "baseline",
           animation:     "cc-fade-up 0.6s ease 0.35s both",
-          fontFamily:    "'Inter', 'Helvetica Neue', Arial, sans-serif",
+          fontFamily:    "'Inter','Helvetica Neue',Arial,sans-serif",
           fontWeight:    800,
           fontSize:      "clamp(30px, 9vw, 40px)",
           letterSpacing: "-0.5px",
@@ -182,8 +180,6 @@ export default function SplashScreen({ onDone }: Props) {
           color:         "#FFFFFF",
         }}>
           <span>Co</span>
-
-          {/* Dotless ı with animated green dot above */}
           <span style={{ position: "relative", display: "inline-block", lineHeight: "inherit" }}>
             ı
             <span style={{
@@ -192,8 +188,7 @@ export default function SplashScreen({ onDone }: Props) {
               left:            "50%",
               marginBottom:    "1px",
               display:         "block",
-              width:           8,
-              height:          8,
+              width:  8, height: 8,
               borderRadius:    "50%",
               background:      "#00FFC6",
               transform:       "translateX(-50%)",
@@ -202,29 +197,20 @@ export default function SplashScreen({ onDone }: Props) {
               animation:       "cc-dot-pulse 1.5s ease-in-out infinite",
             }} />
           </span>
-
           <span>n</span>
           <span style={{ color: "#00DCA0" }}>Cash</span>
         </div>
 
-        {/* ── Dynamic rotating message ── */}
-        <div style={{
-          height:   20,
-          display:  "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          animation: "cc-fade-up 0.5s ease 0.6s both",
-        }}>
+        {/* Dynamic message */}
+        <div style={{ height: 20, display: "flex", alignItems: "center", justifyContent: "center", animation: "cc-fade-up 0.5s ease 0.6s both" }}>
           <p style={{
             margin:        0,
             fontSize:      12,
             letterSpacing: "0.04em",
             textAlign:     "center",
-            fontFamily:    "'Inter', system-ui, sans-serif",
+            fontFamily:    "'Inter',system-ui,sans-serif",
             fontWeight:    400,
-            color:         showFinal
-              ? "rgba(0,255,198,0.80)"
-              : "rgba(255,255,255,0.60)",
+            color:         showFinal ? "rgba(0,255,198,0.85)" : "rgba(255,255,255,0.60)",
             transition:    `opacity ${MSG_FADE_MS}ms ease, color 400ms ease`,
             opacity:       msgVisible ? 1 : 0,
             whiteSpace:    "nowrap",
@@ -233,22 +219,41 @@ export default function SplashScreen({ onDone }: Props) {
           </p>
         </div>
 
-        {/* ── Progress bar ── */}
-        <div style={{
-          width:        "min(220px, 60vw)",
-          height:       2,
-          background:   "rgba(255,255,255,0.07)",
-          borderRadius: 2,
-          overflow:     "hidden",
-          animation:    "cc-fade-up 0.4s ease 0.7s both",
-        }}>
+        {/* Progress bar + percentage */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, animation: "cc-fade-up 0.4s ease 0.7s both" }}>
+
+          {/* Bar */}
           <div style={{
-            height:     "100%",
-            background: "linear-gradient(90deg, #00B8A9, #00FFC6, #00B8A9)",
+            width:        "min(220px, 60vw)",
+            height:       2,
+            background:   "rgba(255,255,255,0.07)",
             borderRadius: 2,
-            width:      "0%",
-            animation:  `cc-bar-fill ${MIN_MS - 500}ms cubic-bezier(0.25,0.1,0.25,1) 0.7s forwards`,
-          }} />
+            overflow:     "hidden",
+          }}>
+            <div style={{
+              height:       "100%",
+              width:        `${pct}%`,
+              background:   "linear-gradient(90deg, #00B8A9, #00FFC6)",
+              borderRadius: 2,
+              transition:   "width 80ms linear",
+            }} />
+          </div>
+
+          {/* Percentage */}
+          <span style={{
+            fontSize:      11,
+            fontFamily:    "'Inter',system-ui,sans-serif",
+            fontWeight:    500,
+            letterSpacing: "0.06em",
+            color:         pct === 100
+              ? "rgba(0,255,198,0.80)"
+              : "rgba(255,255,255,0.30)",
+            transition:    "color 400ms ease",
+            tabularNums:   true as any,
+            fontVariantNumeric: "tabular-nums",
+          }}>
+            {pct}%
+          </span>
         </div>
       </div>
     </div>
