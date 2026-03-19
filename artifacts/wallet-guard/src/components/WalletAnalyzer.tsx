@@ -781,6 +781,33 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       </span>
                     </div>
 
+                    {/* ── Risk recommendation inline ── */}
+                    {(() => {
+                      const rm = getRiskMessage(score);
+                      return (
+                        <div
+                          className="rounded-xl px-4 py-3 mb-5"
+                          style={{
+                            background: `${rm.color}18`,
+                            border: `1px solid ${rm.color}55`,
+                            borderLeft: `4px solid ${rm.color}`,
+                          }}
+                        >
+                          <div className="flex items-start gap-2.5">
+                            <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{rm.icono}</span>
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: rm.color }}>
+                                Recomendación · Nivel {rm.nivel}
+                              </p>
+                              <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.8)" }}>
+                                {rm.mensaje}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Divider */}
                     <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", marginBottom: 16 }} />
 
@@ -812,51 +839,6 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
                       </button>
                     </div>
                   </div>
-                );
-              })()}
-
-              {/* ── Risk recommendation card ── */}
-              {(() => {
-                const score = computeRiskScore(reportData);
-                const { nivel, mensaje, color, icono } = getRiskMessage(score);
-                return (
-                  <motion.div
-                    key={score}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.35, ease: "easeOut" }}
-                    className="rounded-2xl p-4 mb-4"
-                    style={{
-                      background: `${color}0D`,
-                      border: `1px solid ${color}35`,
-                      boxShadow: `0 4px 20px ${color}10`,
-                    }}
-                  >
-                    <div className="flex items-start gap-3">
-                      {/* Icon */}
-                      <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{icono}</span>
-
-                      <div className="flex flex-col gap-1 min-w-0">
-                        {/* Level badge */}
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span
-                            className="text-[10px] font-bold uppercase tracking-widest"
-                            style={{ color }}
-                          >
-                            RECOMENDACIÓN · NIVEL {nivel.toUpperCase()}
-                          </span>
-                        </div>
-
-                        {/* Message */}
-                        <p
-                          className="text-sm leading-relaxed"
-                          style={{ color: "rgba(255,255,255,0.75)" }}
-                        >
-                          {mensaje}
-                        </p>
-                      </div>
-                    </div>
-                  </motion.div>
                 );
               })()}
 
