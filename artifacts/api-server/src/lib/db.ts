@@ -827,6 +827,16 @@ export async function ensureFreemiumTable(): Promise<void> {
   console.log("[db] freemium (plan + scan_limits) ready");
 }
 
+/** Ensure a minimal user row exists for a CC-ID (upsert with defaults). */
+export async function ensureFreemiumUser(ccId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO users (coincash_id, wallet_address, plan, email)
+     VALUES ($1, '', 'free', '')
+     ON CONFLICT (coincash_id) DO NOTHING`,
+    [ccId],
+  );
+}
+
 /** Get the plan for a CC-ID. Falls back to 'free' if not found. */
 export async function getUserPlan(ccId: string): Promise<"free" | "pro"> {
   const res = await pool.query<{ plan: string }>(

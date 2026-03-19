@@ -13,6 +13,7 @@
 
 import { Router } from "express";
 import {
+  ensureFreemiumUser,
   getUserPlan,
   getScanCountToday,
   incrementScanCount,
@@ -43,6 +44,9 @@ router.get("/freemium/status", async (req, res) => {
   if (!ccId) return res.status(400).json({ error: "ccId required" });
 
   try {
+    // Register user row on first visit (fire-and-forget, non-blocking)
+    ensureFreemiumUser(ccId).catch(() => {});
+
     const [plan, scansToday] = await Promise.all([
       getUserPlan(ccId),
       getScanCountToday(ccId),
