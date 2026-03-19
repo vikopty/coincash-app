@@ -33,10 +33,10 @@ const SECTIONS: Section[] = [
     icon: Lock,
     title: "Política de Privacidad",
     items: [
-      { heading: "Datos que recopilamos", body: "Dirección IP, país aproximado y actividad de uso (scans realizados)." },
-      { body: "No recopilamos datos personales sensibles." },
-      { body: "Los datos se usan para mejorar la plataforma." },
-      { body: "No vendemos datos a terceros." },
+      { heading: "Datos que recopilamos", body: "Recopilamos información técnica limitada como dirección IP (de forma temporal), país aproximado y actividad de uso dentro de la aplicación (como número de scans realizados)." },
+      { heading: "Finalidad", body: "Estos datos se utilizan únicamente para mejorar el rendimiento de la plataforma, prevenir abuso o uso indebido del sistema, y optimizar la experiencia del usuario." },
+      { heading: "Privacidad", body: "No recopilamos datos personales sensibles. No vendemos ni compartimos información con terceros. No almacenamos información personal identificable de forma permanente." },
+      { heading: "Seguridad", body: "Aplicamos medidas para proteger la información y garantizar su uso adecuado." },
     ],
   },
   {
