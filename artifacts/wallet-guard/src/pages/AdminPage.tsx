@@ -127,8 +127,9 @@ export default function AdminPage() {
   const [planesUsers,   setPlanesUsers]   = useState<PlanUser[]>([]);
   const [planesStats,   setPlanesStats]   = useState<PlanesStats | null>(null);
   const [pendingUsers,  setPendingUsers]  = useState<PendingUser[]>([]);
-  const [planesLoading, setPlanesLoading] = useState(false);
-  const [actionBusy,    setActionBusy]    = useState<string | null>(null);
+  const [planesLoading,   setPlanesLoading]   = useState(false);
+  const [actionBusy,      setActionBusy]      = useState<string | null>(null);
+  const [showOnlyActive,  setShowOnlyActive]  = useState(true);
 
   // ── Reset stats state ─────────────────────────────────────────────────────
   const [resetModal, setResetModal] = useState<null | "visitas" | "scans">(null);
@@ -638,103 +639,165 @@ export default function AdminPage() {
                 )}
 
                 {/* ── Usuarios table ── */}
-                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, overflow: "hidden" }}>
-                  <div style={{ padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", fontSize: 11, color: "#6B7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                    Todos los usuarios ({planesUsers.length})
-                  </div>
+                {(() => {
+                  const sorted = [...planesUsers].sort((a, b) => {
+                    const aScore = (a.plan === "pro" ? 2 : 0) + (a.scansToday > 0 ? 1 : 0);
+                    const bScore = (b.plan === "pro" ? 2 : 0) + (b.scansToday > 0 ? 1 : 0);
+                    return bScore - aScore;
+                  });
+                  const isActive = (u: PlanUser) => u.plan === "pro" || u.scansToday > 0;
+                  const visible  = showOnlyActive ? sorted.filter(isActive) : sorted;
+                  const hiddenCount = sorted.length - sorted.filter(isActive).length;
 
-                  {planesUsers.length === 0 ? (
-                    <div style={{ padding: "30px 14px", textAlign: "center", color: "#4B5563", fontSize: 13 }}>
-                      Sin usuarios registrados
-                    </div>
-                  ) : (
-                    [...planesUsers]
-                      .sort((a, b) => {
-                        // PRO first; within same plan keep server order (most recent first)
-                        if (a.plan === b.plan) return 0;
-                        return a.plan === "pro" ? -1 : 1;
-                      })
-                      .map((u) => {
-                      const isPro    = u.plan === "pro";
-                      const isBusy   = actionBusy === u.ccId;
-                      const isPending = !!u.upgradeRequestedAt;
-                      return (
-                        <div key={u.ccId} style={{
-                          padding: "12px 14px",
-                          borderBottom: "1px solid rgba(255,255,255,0.04)",
-                          borderLeft: isPending ? "3px solid #F59E0B" : isPro ? "3px solid #A78BFA" : "3px solid transparent",
-                        }}>
-                          {/* Row 1: ccId + plan badge */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                            <span style={{ fontFamily: "monospace", fontSize: 12, color: "#E5E7EB", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {u.ccId}
-                            </span>
-                            <span style={{
-                              fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "2px 7px",
-                              background: isPro ? "rgba(167,139,250,0.2)" : "rgba(107,114,128,0.2)",
-                              color: isPro ? "#A78BFA" : "#9CA3AF",
-                              border: isPro ? "1px solid rgba(167,139,250,0.4)" : "1px solid rgba(107,114,128,0.3)",
-                            }}>
-                              {isPro ? "PRO" : "FREE"}
-                            </span>
-                            {isPending && (
-                              <span style={{ fontSize: 10, color: "#F59E0B", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 6, padding: "2px 6px", fontWeight: 700 }}>
-                                PENDIENTE
-                              </span>
-                            )}
+                  return (
+                    <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, overflow: "hidden" }}>
+                      {/* Header + toggle */}
+                      <div style={{ padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 11, color: "#6B7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                          {showOnlyActive
+                            ? `Activos (${visible.length}${hiddenCount > 0 ? ` de ${planesUsers.length}` : ""})`
+                            : `Todos los usuarios (${planesUsers.length})`}
+                        </span>
+                        {/* Toggle "Mostrar solo activos" */}
+                        <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", userSelect: "none" }}>
+                          <span style={{ fontSize: 10, color: showOnlyActive ? "#00FFC6" : "#4B5563", fontWeight: 600, whiteSpace: "nowrap" }}>
+                            Solo activos
+                          </span>
+                          <div
+                            onClick={() => setShowOnlyActive(v => !v)}
+                            style={{
+                              width: 34, height: 18, borderRadius: 9, position: "relative",
+                              background: showOnlyActive ? "rgba(0,255,198,0.25)" : "rgba(255,255,255,0.08)",
+                              border: showOnlyActive ? "1px solid rgba(0,255,198,0.5)" : "1px solid rgba(255,255,255,0.15)",
+                              transition: "all 0.2s",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <div style={{
+                              position: "absolute", top: 2,
+                              left: showOnlyActive ? 16 : 2,
+                              width: 12, height: 12, borderRadius: "50%",
+                              background: showOnlyActive ? "#00FFC6" : "#4B5563",
+                              transition: "all 0.2s",
+                            }} />
                           </div>
-                          {/* Row 2: email + scans */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                            <span style={{ fontSize: 11, color: "#6B7280", flex: 1 }}>{u.email || "—"}</span>
-                            <span style={{ fontSize: 11, color: "#4B5563" }}>Scans hoy: <strong style={{ color: "#E5E7EB" }}>{u.scansToday}</strong></span>
-                          </div>
-                          {/* Row 3: action buttons */}
-                          <div style={{ display: "flex", gap: 6 }}>
-                            {!isPro ? (
-                              <button
-                                disabled={isBusy}
-                                onClick={() => planAction("set-plan", u.ccId, { plan: "pro" })}
-                                style={{
-                                  flex: 1, background: isBusy ? "rgba(167,139,250,0.1)" : "rgba(167,139,250,0.15)",
-                                  border: "1px solid rgba(167,139,250,0.4)", borderRadius: 8,
-                                  color: "#A78BFA", fontSize: 11, fontWeight: 700, padding: "6px 0",
-                                  cursor: isBusy ? "not-allowed" : "pointer",
-                                }}
-                              >
-                                {isBusy ? "…" : "⬆ Activar PRO"}
-                              </button>
-                            ) : (
-                              <button
-                                disabled={isBusy}
-                                onClick={() => planAction("set-plan", u.ccId, { plan: "free" })}
-                                style={{
-                                  flex: 1, background: isBusy ? "rgba(107,114,128,0.1)" : "rgba(107,114,128,0.1)",
-                                  border: "1px solid rgba(107,114,128,0.3)", borderRadius: 8,
-                                  color: "#9CA3AF", fontSize: 11, fontWeight: 700, padding: "6px 0",
-                                  cursor: isBusy ? "not-allowed" : "pointer",
-                                }}
-                              >
-                                {isBusy ? "…" : "⬇ Quitar PRO"}
-                              </button>
-                            )}
-                            <button
-                              disabled={isBusy}
-                              onClick={() => planAction("reset-scans", u.ccId)}
-                              style={{
-                                flex: 1, background: "rgba(255,255,255,0.04)",
-                                border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
-                                color: "#6B7280", fontSize: 11, fontWeight: 700, padding: "6px 0",
-                                cursor: isBusy ? "not-allowed" : "pointer",
-                              }}
-                            >
-                              {isBusy ? "…" : "↺ Reset scans"}
-                            </button>
-                          </div>
+                        </label>
+                      </div>
+
+                      {visible.length === 0 ? (
+                        <div style={{ padding: "30px 14px", textAlign: "center", color: "#4B5563", fontSize: 13 }}>
+                          {showOnlyActive ? "Sin usuarios activos hoy" : "Sin usuarios registrados"}
                         </div>
-                      );
-                    })
-                  )}
-                </div>
+                      ) : (
+                        visible.map((u) => {
+                          const isPro     = u.plan === "pro";
+                          const isBusy    = actionBusy === u.ccId;
+                          const isPending = !!u.upgradeRequestedAt;
+                          const isActiveUser = u.scansToday > 0;
+
+                          return (
+                            <div key={u.ccId} style={{
+                              padding: "12px 14px",
+                              borderBottom: "1px solid rgba(255,255,255,0.04)",
+                              borderLeft: isPending ? "3px solid #F59E0B" : isPro ? "3px solid #F59E0B" : isActiveUser ? "3px solid #00DCA0" : "3px solid transparent",
+                            }}>
+                              {/* Row 1: ccId + badges */}
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                                <span style={{ fontFamily: "monospace", fontSize: 12, color: "#E5E7EB", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {u.ccId}
+                                </span>
+                                {/* PRO badge — dorado */}
+                                <span style={{
+                                  fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "2px 7px",
+                                  background: isPro ? "rgba(245,158,11,0.18)" : "rgba(107,114,128,0.2)",
+                                  color: isPro ? "#F59E0B" : "#9CA3AF",
+                                  border: isPro ? "1px solid rgba(245,158,11,0.45)" : "1px solid rgba(107,114,128,0.3)",
+                                }}>
+                                  {isPro ? "⭐ PRO" : "FREE"}
+                                </span>
+                                {/* ACTIVO badge — verde, solo si tiene scans */}
+                                {isActiveUser && (
+                                  <span style={{
+                                    fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "2px 7px",
+                                    background: "rgba(0,220,160,0.15)",
+                                    color: "#00DCA0",
+                                    border: "1px solid rgba(0,220,160,0.4)",
+                                  }}>
+                                    ● ACTIVO
+                                  </span>
+                                )}
+                                {isPending && (
+                                  <span style={{ fontSize: 10, color: "#F59E0B", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 6, padding: "2px 6px", fontWeight: 700 }}>
+                                    PENDIENTE
+                                  </span>
+                                )}
+                              </div>
+                              {/* Row 2: email + scans */}
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                <span style={{ fontSize: 11, color: "#6B7280", flex: 1 }}>{u.email || "—"}</span>
+                                <span style={{ fontSize: 11, color: isActiveUser ? "#00DCA0" : "#4B5563" }}>
+                                  Scans hoy: <strong style={{ color: isActiveUser ? "#00FFC6" : "#6B7280" }}>{u.scansToday}</strong>
+                                </span>
+                              </div>
+                              {/* Row 3: action buttons */}
+                              <div style={{ display: "flex", gap: 6 }}>
+                                {!isPro ? (
+                                  <button
+                                    disabled={isBusy}
+                                    onClick={() => planAction("set-plan", u.ccId, { plan: "pro" })}
+                                    style={{
+                                      flex: 1, background: isBusy ? "rgba(245,158,11,0.08)" : "rgba(245,158,11,0.12)",
+                                      border: "1px solid rgba(245,158,11,0.4)", borderRadius: 8,
+                                      color: "#F59E0B", fontSize: 11, fontWeight: 700, padding: "6px 0",
+                                      cursor: isBusy ? "not-allowed" : "pointer",
+                                    }}
+                                  >
+                                    {isBusy ? "…" : "⬆ Activar PRO"}
+                                  </button>
+                                ) : (
+                                  <button
+                                    disabled={isBusy}
+                                    onClick={() => planAction("set-plan", u.ccId, { plan: "free" })}
+                                    style={{
+                                      flex: 1, background: "rgba(107,114,128,0.1)",
+                                      border: "1px solid rgba(107,114,128,0.3)", borderRadius: 8,
+                                      color: "#9CA3AF", fontSize: 11, fontWeight: 700, padding: "6px 0",
+                                      cursor: isBusy ? "not-allowed" : "pointer",
+                                    }}
+                                  >
+                                    {isBusy ? "…" : "⬇ Quitar PRO"}
+                                  </button>
+                                )}
+                                <button
+                                  disabled={isBusy}
+                                  onClick={() => planAction("reset-scans", u.ccId)}
+                                  style={{
+                                    flex: 1, background: "rgba(255,255,255,0.04)",
+                                    border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
+                                    color: "#6B7280", fontSize: 11, fontWeight: 700, padding: "6px 0",
+                                    cursor: isBusy ? "not-allowed" : "pointer",
+                                  }}
+                                >
+                                  {isBusy ? "…" : "↺ Reset scans"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+
+                      {/* Footer: mostrar ocultos hint */}
+                      {showOnlyActive && hiddenCount > 0 && (
+                        <div
+                          onClick={() => setShowOnlyActive(false)}
+                          style={{ padding: "10px 14px", textAlign: "center", fontSize: 11, color: "#4B5563", cursor: "pointer", borderTop: "1px solid rgba(255,255,255,0.04)" }}
+                        >
+                          + {hiddenCount} oculto{hiddenCount > 1 ? "s" : ""} sin actividad — toca para ver todos
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             )}
           </div>
