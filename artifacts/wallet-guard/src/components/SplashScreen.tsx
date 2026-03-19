@@ -26,12 +26,12 @@ const KEYFRAMES = `
 @keyframes cc-dot-pulse {
   0%, 100% {
     opacity: 1;
-    transform: scale(1);
+    transform: translateX(-50%) scale(1);
     box-shadow: 0 0 6px 3px rgba(0,220,160,0.55);
   }
   50% {
     opacity: 0.35;
-    transform: scale(1.2);
+    transform: translateX(-50%) scale(1.2);
     box-shadow: 0 0 14px 6px rgba(0,220,160,0.20);
   }
 }
@@ -125,11 +125,10 @@ export default function SplashScreen({ onDone }: Props) {
           }}
         />
 
-        {/* ── Wordmark: CSS text so dot position is exact and "Cash" is green ── */}
+        {/* ── Wordmark: "i" wraps the dot so position is relative to the letter ── */}
         <div style={{
-          display:       "flex",
-          alignItems:    "center",
-          gap:           0,
+          display:       "inline-flex",
+          alignItems:    "baseline",
           animation:     "cc-fade-up 0.6s ease 0.35s both",
           fontFamily:    "'Inter', 'Helvetica Neue', Arial, sans-serif",
           fontWeight:    800,
@@ -137,23 +136,33 @@ export default function SplashScreen({ onDone }: Props) {
           letterSpacing: "-0.5px",
           lineHeight:    1,
           userSelect:    "none",
+          color:         "#FFFFFF",
         }}>
-          <span style={{ color: "#FFFFFF" }}>Coin</span>
+          {/* "Co" plain */}
+          <span>Co</span>
 
-          {/* Single animated green dot between Coin and Cash */}
-          <span style={{
-            display:      "inline-block",
-            width:        10,
-            height:       10,
-            borderRadius: "50%",
-            background:   "#00DCA0",
-            margin:       "0 3px",
-            flexShrink:   0,
-            alignSelf:    "flex-start",
-            marginTop:    4,
-            animation:    "cc-dot-pulse 1.5s ease-in-out 0.9s infinite",
-          }} />
+          {/* "i" container — dot lives here, centered on the letter */}
+          <span style={{ position: "relative", display: "inline-block" }}>
+            {/* The letter i */}
+            i
+            {/* Dot: absolute, centered on the i's tittle position */}
+            <span style={{
+              position:     "absolute",
+              top:          "3px",
+              left:         "50%",
+              display:      "block",
+              width:        8,
+              height:       8,
+              borderRadius: "50%",
+              background:   "#00DCA0",
+              animation:    "cc-dot-pulse 1.5s ease-in-out 0.9s infinite",
+            }} />
+          </span>
 
+          {/* "n" plain */}
+          <span>n</span>
+
+          {/* "Cash" in green */}
           <span style={{ color: "#00DCA0" }}>Cash</span>
         </div>
 
