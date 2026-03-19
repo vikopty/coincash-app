@@ -55,25 +55,25 @@ function getScoreCardConfig(score: number): { label: string; color: string; bg: 
 function getRiskMessage(score: number): { nivel: string; mensaje: string; color: string; icono: string } {
   if (score >= 81) return {
     nivel:   "Severo",
-    mensaje: "Alto riesgo detectado. No se recomienda interactuar con esta billetera.",
+    mensaje: "Patrones asociados a riesgo detectados. Se recomienda evitar interactuar con esta dirección.",
     color:   DANGER,
     icono:   "⛔",
   };
   if (score >= 61) return {
     nivel:   "Alto",
-    mensaje: "Se han detectado patrones de riesgo. Evita enviar fondos sin verificar completamente.",
+    mensaje: "Interacción con direcciones de riesgo detectada. Podría existir exposición a actividad no verificada.",
     color:   ORANGE,
     icono:   "🚨",
   };
   if (score >= 31) return {
     nivel:   "Moderado",
-    mensaje: "Esta billetera presenta actividad inusual. Se recomienda precaución antes de interactuar.",
+    mensaje: "Actividad inusual detectada. Se recomienda precaución antes de interactuar con esta dirección.",
     color:   AMBER,
     icono:   "⚠️",
   };
   return {
     nivel:   "Bajo",
-    mensaje: "Esta billetera no presenta señales relevantes de riesgo. Puedes interactuar con normalidad, manteniendo buenas prácticas.",
+    mensaje: "Sin señales relevantes de riesgo. No se detecta actividad inusual en los datos analizados.",
     color:   GREEN,
     icono:   "✅",
   };
