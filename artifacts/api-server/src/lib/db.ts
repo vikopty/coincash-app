@@ -3,6 +3,7 @@
 // Uses DATABASE_URL from the Replit-managed environment.
 
 import { Pool } from "pg";
+import { createHash as _createHash } from "crypto";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -857,6 +858,7 @@ export async function ensureDeviceTable(): Promise<void> {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query(`ALTER TABLE device_ids ADD COLUMN IF NOT EXISTS sync_code TEXT`);
   await pool.query(`
     CREATE INDEX IF NOT EXISTS device_ids_cc_id_idx ON device_ids (cc_id)
   `);
@@ -866,13 +868,68 @@ export async function ensureDeviceTable(): Promise<void> {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS device_ids_ip_idx ON device_ids (last_ip)
   `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS device_ids_sync_code_idx ON device_ids (sync_code)
+    WHERE sync_code IS NOT NULL
+  `);
   console.log("[db] device_ids table ready");
+}
+
+/** Generate a human-friendly 8-char sync code (no ambiguous chars). */
+function generateSyncCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+/**
+ * Return the sync code for a given CC-ID.
+ * If none exists yet (old records), generates and saves one.
+ */
+export async function getSyncCodeForCC(ccId: string): Promise<string | null> {
+  // Try to find an existing sync code for this CC-ID
+  const existing = await pool.query<{ sync_code: string | null }>(
+    `SELECT sync_code FROM device_ids WHERE cc_id = $1 AND sync_code IS NOT NULL LIMIT 1`,
+    [ccId],
+  );
+  if (existing.rows.length > 0 && existing.rows[0].sync_code) {
+    return existing.rows[0].sync_code;
+  }
+  // Generate a new one and save it on any row for this cc_id
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateSyncCode();
+    try {
+      const updated = await pool.query<{ sync_code: string }>(
+        `UPDATE device_ids SET sync_code = $1
+         WHERE ctid = (SELECT ctid FROM device_ids WHERE cc_id = $2 LIMIT 1)
+           AND sync_code IS NULL
+         RETURNING sync_code`,
+        [code, ccId],
+      );
+      if (updated.rows.length > 0) return updated.rows[0].sync_code;
+    } catch { /* unique conflict — retry */ }
+  }
+  return null;
+}
+
+/**
+ * Look up a CC-ID by its sync code.
+ * Returns null if the code is invalid.
+ */
+export async function getDeviceBySyncCode(code: string): Promise<string | null> {
+  const normalized = code.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 8);
+  if (normalized.length !== 8) return null;
+  const row = await pool.query<{ cc_id: string }>(
+    `SELECT cc_id FROM device_ids WHERE sync_code = $1 LIMIT 1`,
+    [normalized],
+  );
+  return row.rows[0]?.cc_id ?? null;
 }
 
 /** Hash text with node's built-in crypto (sync). */
 function quickHash(text: string): string {
-  const { createHash } = require("crypto");
-  return createHash("sha256").update(text).digest("hex");
+  return _createHash("sha256").update(text).digest("hex");
 }
 
 /**

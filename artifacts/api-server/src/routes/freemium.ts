@@ -12,6 +12,7 @@
 //   POST /api/freemium/confirm-upgrade       — confirm payment → PRO
 
 import { Router } from "express";
+import { createHash } from "crypto";
 import {
   ensureFreemiumUser,
   getUserPlan,
@@ -27,6 +28,8 @@ import {
   getPendingUpgrades,
   getFreemiumStats,
   identifyDevice,
+  getSyncCodeForCC,
+  getDeviceBySyncCode,
   FREE_SCAN_LIMIT,
   PRO_DURATION_DAYS,
 } from "../lib/db";
@@ -36,7 +39,6 @@ const ADM_KEY = "CoinCashAdmin2026";
 
 /** SHA-256 hash of the client IP — stored instead of raw IP for privacy. */
 function getIpHash(req: any): string {
-  const { createHash } = require("crypto");
   const raw = (
     (req.headers["x-forwarded-for"] as string) ?? req.socket?.remoteAddress ?? ""
   ).split(",")[0].trim();
@@ -71,6 +73,40 @@ router.post("/freemium/identify", async (req, res) => {
   } catch (err: any) {
     console.error("[freemium/identify]", err?.message);
     return res.status(500).json({ error: "identify failed" });
+  }
+});
+
+// ── GET /api/freemium/synccode ────────────────────────────────────────────────
+// Returns (or lazily generates) the 8-char sync code for a given CC-ID.
+// Query: ?ccId=CC-XXXXXX
+router.get("/freemium/synccode", async (req, res) => {
+  const ccId = ((req.query.ccId as string) ?? "").trim();
+  if (!ccId) return res.status(400).json({ error: "ccId required" });
+  try {
+    const syncCode = await getSyncCodeForCC(ccId);
+    if (!syncCode) return res.status(404).json({ error: "no device record found for this ccId" });
+    return res.json({ syncCode });
+  } catch (err: any) {
+    console.error("[freemium/synccode]", err?.message);
+    return res.status(500).json({ error: "internal error" });
+  }
+});
+
+// ── POST /api/freemium/sync ───────────────────────────────────────────────────
+// Claims an existing CC-ID via sync code. The caller should persist the returned
+// ccId in localStorage and reload.
+// Body: { code: string }
+// Returns: { ccId: string }
+router.post("/freemium/sync", async (req, res) => {
+  const code = ((req.body?.code) ?? "").trim();
+  if (!code) return res.status(400).json({ error: "code required" });
+  try {
+    const ccId = await getDeviceBySyncCode(code);
+    if (!ccId) return res.status(404).json({ error: "invalid code" });
+    return res.json({ ccId });
+  } catch (err: any) {
+    console.error("[freemium/sync]", err?.message);
+    return res.status(500).json({ error: "internal error" });
   }
 });
 

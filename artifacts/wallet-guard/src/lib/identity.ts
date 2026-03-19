@@ -1,6 +1,7 @@
 import { API_BASE } from "@/lib/apiConfig";
 
-const LS_KEY = "coincash-cc-id";
+const LS_KEY        = "coincash-cc-id";
+const LS_SYNC_CLAIM = "cc-sync-claim";
 
 async function sha256hex(text: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -46,6 +47,28 @@ export async function resolveIdentity(): Promise<string> {
   if (_resolvePromise) return _resolvePromise;
 
   _resolvePromise = (async () => {
+    // ── Priority 0: pending sync claim (user entered a sync code on this device) ──
+    const pendingCode = localStorage.getItem(LS_SYNC_CLAIM);
+    if (pendingCode) {
+      try {
+        const res = await fetch(`${API_BASE}/freemium/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: pendingCode }),
+        });
+        if (res.ok) {
+          const { ccId } = await res.json();
+          if (ccId && typeof ccId === "string") {
+            localStorage.setItem(LS_KEY, ccId);
+            localStorage.removeItem(LS_SYNC_CLAIM);
+            return ccId;
+          }
+        }
+      } catch {}
+      // If the claim failed (bad code, network error), just remove it and continue normally
+      localStorage.removeItem(LS_SYNC_CLAIM);
+    }
+
     const cached = localStorage.getItem(LS_KEY);
     const fp = await computeFingerprint().catch(() => "");
     const ua = navigator.userAgent ?? "";
@@ -74,4 +97,12 @@ export async function resolveIdentity(): Promise<string> {
   })();
 
   return _resolvePromise;
+}
+
+/**
+ * Store a sync code that will be claimed on the next page load.
+ * After calling this, reload the page so resolveIdentity picks it up.
+ */
+export function claimSyncCode(code: string): void {
+  localStorage.setItem(LS_SYNC_CLAIM, code.trim().toUpperCase());
 }

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import QRCode from "qrcode";
-import { Camera, Bell, BellOff, Check, Copy, Headphones, ChevronRight, Trash2 } from "lucide-react";
+import { Camera, Bell, BellOff, Check, Copy, Headphones, ChevronRight, Trash2, Link2 } from "lucide-react";
 import { API_BASE } from "@/lib/apiConfig";
+import { claimSyncCode } from "@/lib/identity";
 
 const TEAL   = "#00FFC6";
 const BG     = "#0B0F14";
@@ -64,6 +65,14 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
 
   const [visitStats, setVisitStats] = useState<{ total: number; today: number; online: number; countries: { name: string; code: string; count: number }[] } | null>(null);
 
+  // ── Sync code (cross-device linking) ─────────────────────────────────────
+  const [syncCode,        setSyncCode]        = useState<string | null>(null);
+  const [syncCodeLoading, setSyncCodeLoading] = useState(false);
+  const [syncCodeCopied,  setSyncCodeCopied]  = useState(false);
+  const [claimInput,      setClaimInput]      = useState("");
+  const [claimStatus,     setClaimStatus]     = useState<"idle"|"loading"|"success"|"error">("idle");
+  const [claimMsg,        setClaimMsg]        = useState("");
+
   // Crop modal state
   const [cropSrc,        setCropSrc]        = useState<string | null>(null);
   const [cropOffset,     setCropOffset]     = useState({ x: 0, y: 0 });
@@ -111,6 +120,54 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
     const stored = localStorage.getItem("coincash-push-enabled");
     if (stored === "true") setPushEnabled(true);
   }, []);
+
+  // Load sync code on mount
+  useEffect(() => {
+    setSyncCodeLoading(true);
+    fetch(`${API_BASE}/freemium/synccode?ccId=${encodeURIComponent(ccId)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.syncCode) setSyncCode(d.syncCode); })
+      .catch(() => {})
+      .finally(() => setSyncCodeLoading(false));
+  }, [ccId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleClaimSubmit() {
+    const code = claimInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (code.length !== 8) {
+      setClaimStatus("error");
+      setClaimMsg("El código debe tener 8 caracteres.");
+      return;
+    }
+    setClaimStatus("loading");
+    setClaimMsg("");
+    try {
+      const res = await fetch(`${API_BASE}/freemium/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      if (!res.ok) {
+        setClaimStatus("error");
+        setClaimMsg("Código inválido o no encontrado.");
+        return;
+      }
+      const { ccId: newId } = await res.json();
+      if (!newId) {
+        setClaimStatus("error");
+        setClaimMsg("Código inválido o no encontrado.");
+        return;
+      }
+      // Persist the claimed CC-ID and reload so identity resolves to it
+      claimSyncCode(code);
+      localStorage.setItem("coincash-cc-id", newId);
+      setClaimStatus("success");
+      setClaimMsg(`Cuenta vinculada: ${newId}. Recargando…`);
+      setTimeout(() => window.location.reload(), 1800);
+    } catch {
+      setClaimStatus("error");
+      setClaimMsg("Error de red. Inténtalo de nuevo.");
+    }
+  }
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -417,6 +474,95 @@ export default function SettingsPage({ onOpenSupport }: { onOpenSupport?: () => 
         <p style={{ margin: "6px 0 0", fontSize: 11, color: "rgba(255,255,255,0.22)", lineHeight: 1.4 }}>
           Usa este ID para identificar tu cuenta o contactar soporte.
         </p>
+      </div>
+
+      {/* ── Sincronización entre dispositivos ─────────────────────────────── */}
+      <div style={{ margin: "14px 16px 0", background: CARD, borderRadius: 12, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{ padding: "12px 16px 10px", display: "flex", alignItems: "center", gap: 8, borderBottom: `1px solid ${BORDER}` }}>
+          <Link2 size={15} color={TEAL} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>Sincronizar dispositivos</span>
+        </div>
+
+        {/* My code */}
+        <div style={{ padding: "12px 16px" }}>
+          <p style={{ margin: "0 0 6px", fontSize: 11, color: MUTED, textTransform: "uppercase", letterSpacing: "0.07em" }}>Tu código de sincronización</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              flex: 1, fontFamily: "monospace", fontSize: 22, fontWeight: 800,
+              color: TEAL, letterSpacing: "0.12em",
+            }}>
+              {syncCodeLoading ? "········" : (syncCode ?? "——")}
+            </span>
+            {syncCode && (
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(syncCode).then(() => {
+                    setSyncCodeCopied(true);
+                    setTimeout(() => setSyncCodeCopied(false), 2000);
+                  });
+                }}
+                style={{
+                  background: syncCodeCopied ? "rgba(0,255,198,0.15)" : "rgba(255,255,255,0.06)",
+                  border: `1px solid ${syncCodeCopied ? "rgba(0,255,198,0.4)" : BORDER}`,
+                  borderRadius: 8, padding: "6px 12px", cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 5,
+                  color: syncCodeCopied ? TEAL : MUTED, fontSize: 12, fontWeight: 600,
+                  transition: "all 0.2s",
+                }}
+              >
+                {syncCodeCopied ? <Check size={13} /> : <Copy size={13} />}
+                {syncCodeCopied ? "Copiado" : "Copiar"}
+              </button>
+            )}
+          </div>
+          <p style={{ margin: "5px 0 0", fontSize: 11, color: "rgba(255,255,255,0.22)", lineHeight: 1.4 }}>
+            Comparte este código en otro dispositivo para vincular tu cuenta.
+          </p>
+        </div>
+
+        {/* Claim another code */}
+        <div style={{ padding: "0 16px 14px", borderTop: `1px solid ${BORDER}` }}>
+          <p style={{ margin: "12px 0 7px", fontSize: 11, color: MUTED, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+            ¿Tienes un código de otro dispositivo?
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={claimInput}
+              onChange={e => { setClaimInput(e.target.value.toUpperCase()); setClaimStatus("idle"); }}
+              placeholder="Ej: ABCD1234"
+              maxLength={10}
+              style={{
+                flex: 1, background: "rgba(255,255,255,0.06)", border: `1px solid ${BORDER}`,
+                borderRadius: 8, padding: "9px 12px", color: TEXT, fontFamily: "monospace",
+                fontSize: 15, fontWeight: 700, letterSpacing: "0.08em", outline: "none",
+              }}
+            />
+            <button
+              onClick={handleClaimSubmit}
+              disabled={claimStatus === "loading" || claimStatus === "success"}
+              style={{
+                background: claimStatus === "success" ? "rgba(0,255,198,0.15)" : "rgba(0,255,198,0.12)",
+                border: `1px solid rgba(0,255,198,0.3)`,
+                borderRadius: 8, padding: "9px 14px", cursor: claimStatus === "loading" ? "wait" : "pointer",
+                display: "flex", alignItems: "center", gap: 5,
+                color: TEAL, fontSize: 13, fontWeight: 700,
+                transition: "all 0.2s",
+              }}
+            >
+              {claimStatus === "loading" ? "..." : claimStatus === "success" ? <Check size={14} /> : "Vincular"}
+            </button>
+          </div>
+          {claimMsg && (
+            <p style={{
+              margin: "7px 0 0", fontSize: 12,
+              color: claimStatus === "success" ? TEAL : "#FF4D4F",
+              lineHeight: 1.4,
+            }}>
+              {claimMsg}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* ── CoinCash PRO upgrade card ── */}
