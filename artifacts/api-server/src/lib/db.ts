@@ -888,26 +888,11 @@ export async function identifyDevice(
   ip: string,
   hint?: string,
 ): Promise<string> {
-  const uaHash  = quickHash(ua);
-  const safeIp  = (ip ?? "").split(",")[0].trim().slice(0, 64);
+  const uaHash = quickHash(ua);
+  const safeIp = (ip ?? "").split(",")[0].trim().slice(0, 64);
 
-  // 1. Primary lookup: fingerprint is the most stable signal
-  if (fpHash) {
-    const row = await pool.query<{ cc_id: string }>(
-      `SELECT cc_id FROM device_ids WHERE fp_hash = $1 LIMIT 1`,
-      [fpHash],
-    );
-    if (row.rows.length > 0) {
-      // Update UA + IP for freshness (non-critical)
-      pool.query(
-        `UPDATE device_ids SET ua_hash = $2, last_ip = $3 WHERE fp_hash = $1`,
-        [fpHash, uaHash, safeIp],
-      ).catch(() => {});
-      return row.rows[0].cc_id;
-    }
-  }
-
-  // 2. Fallback: same IP regardless of browser/UA — unifies all browsers on same device/network
+  // 1. Primary lookup: IP — the oldest record for this IP is the canonical CC-ID.
+  //    This unifies all browsers (Safari, Chrome, incognito…) on the same device/network.
   if (safeIp) {
     const row = await pool.query<{ cc_id: string }>(
       `SELECT cc_id FROM device_ids WHERE last_ip = $1 ORDER BY created_at ASC LIMIT 1`,
@@ -915,11 +900,14 @@ export async function identifyDevice(
     );
     if (row.rows.length > 0) {
       const ccId = row.rows[0].cc_id;
-      // Back-fill this browser's fingerprint so future lookups are instant
+      // Re-register this browser's fingerprint so it points to the canonical ID.
+      // ON CONFLICT DO UPDATE ensures existing fingerprint entries are also corrected.
       if (fpHash) {
         pool.query(
           `INSERT INTO device_ids (fp_hash, cc_id, ua_hash, last_ip)
-           VALUES ($1, $2, $3, $4) ON CONFLICT (fp_hash) DO NOTHING`,
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (fp_hash) DO UPDATE
+             SET cc_id = EXCLUDED.cc_id, ua_hash = EXCLUDED.ua_hash, last_ip = EXCLUDED.last_ip`,
           [fpHash, ccId, uaHash, safeIp],
         ).catch(() => {});
       }
@@ -927,7 +915,25 @@ export async function identifyDevice(
     }
   }
 
-  // 3. New device — reuse hint ccId if provided, else generate fresh
+  // 2. Fallback: fingerprint lookup — handles users that change IPs (mobile data ↔ WiFi).
+  if (fpHash) {
+    const row = await pool.query<{ cc_id: string }>(
+      `SELECT cc_id FROM device_ids WHERE fp_hash = $1 LIMIT 1`,
+      [fpHash],
+    );
+    if (row.rows.length > 0) {
+      const ccId = row.rows[0].cc_id;
+      // Update IP so next session can match via IP lookup
+      pool.query(
+        `UPDATE device_ids SET ua_hash = $2, last_ip = $3 WHERE fp_hash = $1`,
+        [fpHash, uaHash, safeIp],
+      ).catch(() => {});
+      return ccId;
+    }
+  }
+
+  // 3. Brand-new device — prefer the hint (existing localStorage ID) to avoid orphaning
+  //    an account that may already have scan history or PRO status.
   let ccId = hint && /^CC-\d{6}$/.test(hint) ? hint : generateCoinCashId();
 
   // Ensure user row exists in users table
