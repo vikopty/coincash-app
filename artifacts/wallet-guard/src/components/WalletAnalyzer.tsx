@@ -307,9 +307,21 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
     }).then(setQrDataUrl).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load freemium status on mount
+  // Load freemium status on mount + poll every 30s (picks up admin PRO activations)
   useEffect(() => {
     fetchFreemiumStatus(ccId).then(setFreemium);
+    const t = setInterval(() => {
+      fetchFreemiumStatus(ccId).then((s) => {
+        setFreemium((prev) => {
+          // If plan changed to pro, reset the "Ya pagué" flow
+          if (prev.plan !== "pro" && s.plan === "pro") {
+            setUpgradeRequested(false);
+          }
+          return s;
+        });
+      });
+    }, 30_000);
+    return () => clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync daily stats from localStorage on mount
