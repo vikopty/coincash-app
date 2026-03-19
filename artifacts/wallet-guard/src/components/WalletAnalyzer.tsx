@@ -288,6 +288,9 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [freemium, setFreemium] = useState<FreemiumStatus>(DEFAULT_FREEMIUM);
+  const [upgradeEmail,     setUpgradeEmail]     = useState("");
+  const [upgradeRequested, setUpgradeRequested] = useState(false);
+  const [upgradeSending,   setUpgradeSending]   = useState(false);
   const ccId = getCcId();
   const resultRef = useRef<HTMLDivElement>(null);
 
@@ -750,9 +753,50 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
               <p className="text-sm font-semibold text-center" style={{ color: "#FF4D4F", marginBottom: 4 }}>
                 ⛔ Has alcanzado el límite gratuito.
               </p>
-              <p className="text-xs text-center" style={{ color: "rgba(255,255,255,0.5)" }}>
+              <p className="text-xs text-center" style={{ color: "rgba(255,255,255,0.5)", marginBottom: 10 }}>
                 Actualiza a <strong style={{ color: "#00FFC6" }}>CoinCash Pro</strong> para scans ilimitados.
               </p>
+              {upgradeRequested ? (
+                <p className="text-xs text-center" style={{ color: "#00FFC6", fontWeight: 600 }}>
+                  ✓ Solicitud enviada. El admin verificará tu pago pronto.
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <input
+                    type="email"
+                    placeholder="Tu email (opcional, para contacto)"
+                    value={upgradeEmail}
+                    onChange={(e) => setUpgradeEmail(e.target.value)}
+                    style={{
+                      background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)",
+                      borderRadius: 8, padding: "7px 12px", fontSize: 12, color: "#fff",
+                      outline: "none", fontFamily: "inherit", width: "100%",
+                    }}
+                  />
+                  <button
+                    disabled={upgradeSending}
+                    onClick={async () => {
+                      setUpgradeSending(true);
+                      try {
+                        await fetch(`${API_BASE}/freemium/request-upgrade`, {
+                          method:  "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body:    JSON.stringify({ ccId, email: upgradeEmail.trim() }),
+                        });
+                        setUpgradeRequested(true);
+                      } catch { /* ignore */ } finally { setUpgradeSending(false); }
+                    }}
+                    style={{
+                      background: upgradeSending ? "rgba(0,255,198,0.1)" : "rgba(0,255,198,0.12)",
+                      border: "1px solid rgba(0,255,198,0.35)", borderRadius: 8,
+                      color: "#00FFC6", fontSize: 12, fontWeight: 700, padding: "8px 0",
+                      cursor: upgradeSending ? "not-allowed" : "pointer", width: "100%",
+                    }}
+                  >
+                    {upgradeSending ? "Enviando…" : "💳 Ya pagué — Solicitar activación PRO"}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

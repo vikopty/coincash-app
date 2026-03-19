@@ -811,6 +811,10 @@ export const FREE_SCAN_LIMIT = 5;
 export async function ensureFreemiumTable(): Promise<void> {
   // Add plan column to existing users table
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free'`);
+  // Optional email for upgrade requests
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT ''`);
+  // Timestamp when user requested upgrade (pending payment)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS upgrade_requested_at TIMESTAMP`);
   // Daily scan counter per CC-ID
   await pool.query(`
     CREATE TABLE IF NOT EXISTS scan_limits (
@@ -854,12 +858,99 @@ export async function incrementScanCount(ccId: string): Promise<number> {
   return res.rows[0]?.scan_count ?? 1;
 }
 
-/** Set user plan (free | pro). Upserts into users table. */
+/** Set user plan (free | pro). */
 export async function setUserPlan(ccId: string, plan: "free" | "pro"): Promise<void> {
   await pool.query(
-    `UPDATE users SET plan = $2 WHERE coincash_id = $1`,
+    `UPDATE users SET plan = $2, upgrade_requested_at = NULL WHERE coincash_id = $1`,
     [ccId, plan],
   );
+}
+
+/** Reset today's scan count for a CC-ID. */
+export async function resetScanCount(ccId: string): Promise<void> {
+  await pool.query(
+    `DELETE FROM scan_limits WHERE cc_id = $1 AND scan_date = CURRENT_DATE`,
+    [ccId],
+  );
+}
+
+/** Ensure a user row exists, then record an upgrade request. */
+export async function requestUpgrade(ccId: string, email: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO users (coincash_id, wallet_address, plan, email, upgrade_requested_at)
+     VALUES ($1, '', 'free', $2, NOW())
+     ON CONFLICT (coincash_id) DO UPDATE
+       SET email = EXCLUDED.email, upgrade_requested_at = NOW()`,
+    [ccId, email],
+  );
+}
+
+/** Return all users + their today's scan count. */
+export async function getAllUsersWithPlans(): Promise<{
+  ccId: string; email: string; plan: string; scansToday: number; upgradeRequestedAt: string | null;
+}[]> {
+  const res = await pool.query<{
+    coincash_id: string; email: string; plan: string;
+    scans_today: string; upgrade_requested_at: string | null;
+  }>(`
+    SELECT u.coincash_id,
+           u.email,
+           u.plan,
+           COALESCE(sl.scan_count, 0) AS scans_today,
+           u.upgrade_requested_at
+      FROM users u
+      LEFT JOIN scan_limits sl
+             ON sl.cc_id = u.coincash_id AND sl.scan_date = CURRENT_DATE
+     WHERE u.coincash_id != 'CC-SUPPORT'
+     ORDER BY u.upgrade_requested_at DESC NULLS LAST, u.coincash_id
+  `);
+  return res.rows.map((r) => ({
+    ccId:               r.coincash_id,
+    email:              r.email,
+    plan:               r.plan,
+    scansToday:         parseInt(r.scans_today as any, 10) || 0,
+    upgradeRequestedAt: r.upgrade_requested_at ?? null,
+  }));
+}
+
+/** Return users with a pending upgrade request. */
+export async function getPendingUpgrades(): Promise<{
+  ccId: string; email: string; requestedAt: string;
+}[]> {
+  const res = await pool.query<{ coincash_id: string; email: string; upgrade_requested_at: string }>(`
+    SELECT coincash_id, email, upgrade_requested_at
+      FROM users
+     WHERE upgrade_requested_at IS NOT NULL AND plan = 'free'
+     ORDER BY upgrade_requested_at ASC
+  `);
+  return res.rows.map((r) => ({
+    ccId:        r.coincash_id,
+    email:       r.email,
+    requestedAt: r.upgrade_requested_at,
+  }));
+}
+
+/** Total users, PRO count, FREE count, scans today across all users. */
+export async function getFreemiumStats(): Promise<{
+  totalUsers: number; proUsers: number; freeUsers: number; scansToday: number;
+}> {
+  const [usersRes, scansRes] = await Promise.all([
+    pool.query<{ total: string; pro: string; free: string }>(`
+      SELECT COUNT(*) FILTER (WHERE coincash_id != 'CC-SUPPORT') AS total,
+             COUNT(*) FILTER (WHERE plan = 'pro' AND coincash_id != 'CC-SUPPORT') AS pro,
+             COUNT(*) FILTER (WHERE plan = 'free' AND coincash_id != 'CC-SUPPORT') AS free
+        FROM users
+    `),
+    pool.query<{ total: string }>(`
+      SELECT COALESCE(SUM(scan_count), 0) AS total FROM scan_limits WHERE scan_date = CURRENT_DATE
+    `),
+  ]);
+  return {
+    totalUsers: parseInt(usersRes.rows[0]?.total ?? "0", 10),
+    proUsers:   parseInt(usersRes.rows[0]?.pro   ?? "0", 10),
+    freeUsers:  parseInt(usersRes.rows[0]?.free  ?? "0", 10),
+    scansToday: parseInt(scansRes.rows[0]?.total  ?? "0", 10),
+  };
 }
 
 /** Return total visits, today's visits, online count and per-country breakdown. */

@@ -97,9 +97,57 @@ export default function AdminPage() {
   const [input, setInput]                 = useState("");
   const [loadingConv, setLoadingConv]     = useState(false);
   const [unreadUsers, setUnreadUsers]     = useState<Set<string>>(new Set());
-  const [adminTab, setAdminTab]           = useState<"mensajes" | "visitantes" | "scans">("mensajes");
+  const [adminTab, setAdminTab]           = useState<"mensajes" | "visitantes" | "scans" | "planes">("mensajes");
   const [visitStats, setVisitStats]       = useState<VisitStats>({ total: 0, countries: [] });
   const [scanStats,  setScanStats]        = useState<ScanStats | null>(null);
+
+  // ── Planes state ─────────────────────────────────────────────────────────
+  interface PlanUser { ccId: string; email: string; plan: string; scansToday: number; upgradeRequestedAt: string | null; }
+  interface PlanesStats { totalUsers: number; proUsers: number; freeUsers: number; scansToday: number; }
+  interface PendingUser { ccId: string; email: string; requestedAt: string; }
+  const [planesUsers,   setPlanesUsers]   = useState<PlanUser[]>([]);
+  const [planesStats,   setPlanesStats]   = useState<PlanesStats | null>(null);
+  const [pendingUsers,  setPendingUsers]  = useState<PendingUser[]>([]);
+  const [planesLoading, setPlanesLoading] = useState(false);
+  const [actionBusy,    setActionBusy]    = useState<string | null>(null); // ccId being acted on
+
+  const fetchPlanesData = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API}/freemium/users?key=${SCAN_KEY}`);
+      const data = await res.json();
+      if (data.users)  setPlanesUsers(data.users);
+      if (data.stats)  setPlanesStats(data.stats);
+    } catch { /* ignore */ }
+  }, []);
+
+  const fetchPendingData = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API}/freemium/pending?key=${SCAN_KEY}`);
+      const data = await res.json();
+      if (data.pending) setPendingUsers(data.pending);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    if (adminTab !== "planes") return;
+    setPlanesLoading(true);
+    Promise.all([fetchPlanesData(), fetchPendingData()]).finally(() => setPlanesLoading(false));
+    const t = setInterval(() => { fetchPlanesData(); fetchPendingData(); }, 15000);
+    return () => clearInterval(t);
+  }, [adminTab, fetchPlanesData, fetchPendingData]);
+
+  const planAction = useCallback(async (endpoint: string, ccId: string, extra?: object) => {
+    setActionBusy(ccId);
+    try {
+      await fetch(`${API}/freemium/${endpoint}`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ key: SCAN_KEY, ccId, ...extra }),
+      });
+      await Promise.all([fetchPlanesData(), fetchPendingData()]);
+    } catch { /* ignore */ } finally { setActionBusy(null); }
+  }, [fetchPlanesData, fetchPendingData]);
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // ── Visitor stats polling ─────────────────────────────────────────────────
@@ -261,6 +309,7 @@ export default function AdminPage() {
               { key: "mensajes",   label: "💬 Chats" },
               { key: "visitantes", label: "🌍 Visitas" },
               { key: "scans",      label: "🔍 Scans" },
+              { key: "planes",     label: "💳 Planes" },
             ] as const).map((t) => (
               <button
                 key={t.key}
@@ -431,6 +480,159 @@ export default function AdminPage() {
                       <span style={{ fontSize: 10, color: "#6B7280", flexShrink: 0, whiteSpace: "nowrap" }}>{timeAgo(r.scanned_at)}</span>
                     </div>
                   ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── Planes y Suscripciones panel ── */}
+        {adminTab === "planes" && (
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+            {planesLoading && !planesStats ? (
+              <div style={{ textAlign: "center", padding: "40px", color: "#4B5563" }}>Cargando…</div>
+            ) : (
+              <>
+                {/* ── Stats cards ── */}
+                {planesStats && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+                    {[
+                      { label: "Total usuarios", value: planesStats.totalUsers, color: "#00FFC6" },
+                      { label: "Usuarios PRO",   value: planesStats.proUsers,   color: "#A78BFA" },
+                      { label: "Usuarios FREE",  value: planesStats.freeUsers,  color: "#6B7280" },
+                      { label: "Scans hoy",      value: planesStats.scansToday, color: "#F59E0B" },
+                    ].map((item) => (
+                      <div key={item.label} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "14px 16px" }}>
+                        <div style={{ fontSize: 10, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{item.label}</div>
+                        <div style={{ fontSize: 28, fontWeight: 800, color: item.color, fontFamily: "monospace", lineHeight: 1 }}>{item.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* ── Pagos pendientes ── */}
+                {pendingUsers.length > 0 && (
+                  <div style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 14, marginBottom: 16, overflow: "hidden" }}>
+                    <div style={{ padding: "10px 14px", borderBottom: "1px solid rgba(245,158,11,0.2)", display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 14 }}>⏳</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#F59E0B", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                        Pagos pendientes ({pendingUsers.length})
+                      </span>
+                    </div>
+                    {pendingUsers.map((u) => (
+                      <div key={u.ccId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontFamily: "monospace", color: "#E5E7EB", marginBottom: 2 }}>{u.ccId}</div>
+                          {u.email && <div style={{ fontSize: 11, color: "#6B7280" }}>{u.email}</div>}
+                          <div style={{ fontSize: 10, color: "#4B5563", marginTop: 1 }}>{timeAgo(u.requestedAt)}</div>
+                        </div>
+                        <button
+                          disabled={actionBusy === u.ccId}
+                          onClick={() => planAction("confirm-upgrade", u.ccId)}
+                          style={{
+                            background: actionBusy === u.ccId ? "rgba(167,139,250,0.2)" : "linear-gradient(135deg,#7C3AED,#A78BFA)",
+                            border: "none", borderRadius: 8, color: "#fff", fontSize: 11, fontWeight: 700,
+                            padding: "6px 12px", cursor: actionBusy === u.ccId ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                          }}
+                        >
+                          {actionBusy === u.ccId ? "…" : "✓ Confirmar pago"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* ── Usuarios table ── */}
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", fontSize: 11, color: "#6B7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    Todos los usuarios ({planesUsers.length})
+                  </div>
+
+                  {planesUsers.length === 0 ? (
+                    <div style={{ padding: "30px 14px", textAlign: "center", color: "#4B5563", fontSize: 13 }}>
+                      Sin usuarios registrados
+                    </div>
+                  ) : (
+                    planesUsers.map((u) => {
+                      const isPro    = u.plan === "pro";
+                      const isBusy   = actionBusy === u.ccId;
+                      const isPending = !!u.upgradeRequestedAt;
+                      return (
+                        <div key={u.ccId} style={{
+                          padding: "12px 14px",
+                          borderBottom: "1px solid rgba(255,255,255,0.04)",
+                          borderLeft: isPending ? "3px solid #F59E0B" : isPro ? "3px solid #A78BFA" : "3px solid transparent",
+                        }}>
+                          {/* Row 1: ccId + plan badge */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                            <span style={{ fontFamily: "monospace", fontSize: 12, color: "#E5E7EB", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {u.ccId}
+                            </span>
+                            <span style={{
+                              fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "2px 7px",
+                              background: isPro ? "rgba(167,139,250,0.2)" : "rgba(107,114,128,0.2)",
+                              color: isPro ? "#A78BFA" : "#9CA3AF",
+                              border: isPro ? "1px solid rgba(167,139,250,0.4)" : "1px solid rgba(107,114,128,0.3)",
+                            }}>
+                              {isPro ? "PRO" : "FREE"}
+                            </span>
+                            {isPending && (
+                              <span style={{ fontSize: 10, color: "#F59E0B", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 6, padding: "2px 6px", fontWeight: 700 }}>
+                                PENDIENTE
+                              </span>
+                            )}
+                          </div>
+                          {/* Row 2: email + scans */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                            <span style={{ fontSize: 11, color: "#6B7280", flex: 1 }}>{u.email || "—"}</span>
+                            <span style={{ fontSize: 11, color: "#4B5563" }}>Scans hoy: <strong style={{ color: "#E5E7EB" }}>{u.scansToday}</strong></span>
+                          </div>
+                          {/* Row 3: action buttons */}
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {!isPro ? (
+                              <button
+                                disabled={isBusy}
+                                onClick={() => planAction("set-plan", u.ccId, { plan: "pro" })}
+                                style={{
+                                  flex: 1, background: isBusy ? "rgba(167,139,250,0.1)" : "rgba(167,139,250,0.15)",
+                                  border: "1px solid rgba(167,139,250,0.4)", borderRadius: 8,
+                                  color: "#A78BFA", fontSize: 11, fontWeight: 700, padding: "6px 0",
+                                  cursor: isBusy ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                {isBusy ? "…" : "⬆ Activar PRO"}
+                              </button>
+                            ) : (
+                              <button
+                                disabled={isBusy}
+                                onClick={() => planAction("set-plan", u.ccId, { plan: "free" })}
+                                style={{
+                                  flex: 1, background: isBusy ? "rgba(107,114,128,0.1)" : "rgba(107,114,128,0.1)",
+                                  border: "1px solid rgba(107,114,128,0.3)", borderRadius: 8,
+                                  color: "#9CA3AF", fontSize: 11, fontWeight: 700, padding: "6px 0",
+                                  cursor: isBusy ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                {isBusy ? "…" : "⬇ Quitar PRO"}
+                              </button>
+                            )}
+                            <button
+                              disabled={isBusy}
+                              onClick={() => planAction("reset-scans", u.ccId)}
+                              style={{
+                                flex: 1, background: "rgba(255,255,255,0.04)",
+                                border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
+                                color: "#6B7280", fontSize: 11, fontWeight: 700, padding: "6px 0",
+                                cursor: isBusy ? "not-allowed" : "pointer",
+                              }}
+                            >
+                              {isBusy ? "…" : "↺ Reset scans"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </>
             )}
