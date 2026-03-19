@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
+import QRCode from "qrcode";
 import { API_BASE } from "@/lib/apiConfig";
 import { ScanSearch, Loader2, QrCode, X, CheckCircle2, AlertTriangle, ShieldAlert,
-         Copy, CheckCheck, Activity, Zap, Hash, Shield } from "lucide-react";
+         Copy, Check, CheckCheck, Activity, Zap, Hash, Shield } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import TronAnalysisReport from "@/components/TronAnalysisReport";
 import ScanningAnimation from "@/components/ScanningAnimation";
@@ -291,8 +292,20 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
   const [upgradeEmail,     setUpgradeEmail]     = useState("");
   const [upgradeRequested, setUpgradeRequested] = useState(false);
   const [upgradeSending,   setUpgradeSending]   = useState(false);
+  const [qrDataUrl,        setQrDataUrl]        = useState<string>("");
+  const [copiedAddr,       setCopiedAddr]       = useState(false);
   const ccId = getCcId();
   const resultRef = useRef<HTMLDivElement>(null);
+
+  const PRO_ADDRESS = "TM2cRRegda1gQAQY9hGbg6DMscN7okNVA1";
+
+  // Generate QR code for payment address on mount
+  useEffect(() => {
+    QRCode.toDataURL(PRO_ADDRESS, {
+      width: 200, margin: 2,
+      color: { dark: "#000000", light: "#FFFFFF" },
+    }).then(setQrDataUrl).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load freemium status on mount
   useEffect(() => {
@@ -742,61 +755,154 @@ const WalletAnalyzer = ({ prefillAddress, onAddressConsumed }: WalletAnalyzerPro
 
         {/* Action buttons — stacked */}
         <div className="flex flex-col gap-2.5">
-          {/* ── Freemium limit message ─────────────────────────────────────── */}
+          {/* ── Freemium limit → Payment card ──────────────────────────────── */}
           {!freemium.canScan && (
-            <div className="rounded-xl px-4 py-3"
-              style={{
-                background: "rgba(255,75,79,0.08)",
-                border: "1px solid rgba(255,75,79,0.35)",
-                borderLeft: "4px solid #FF4D4F",
+            <div style={{
+              background: "rgba(11,18,32,0.95)",
+              border: "1px solid rgba(0,255,198,0.2)",
+              borderRadius: 16, overflow: "hidden",
+            }}>
+              {/* Header */}
+              <div style={{
+                background: "linear-gradient(135deg,rgba(0,255,198,0.1),rgba(0,128,255,0.06))",
+                borderBottom: "1px solid rgba(0,255,198,0.15)",
+                padding: "12px 16px",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
               }}>
-              <p className="text-sm font-semibold text-center" style={{ color: "#FF4D4F", marginBottom: 4 }}>
-                ⛔ Has alcanzado el límite gratuito.
-              </p>
-              <p className="text-xs text-center" style={{ color: "rgba(255,255,255,0.5)", marginBottom: 10 }}>
-                Actualiza a <strong style={{ color: "#00FFC6" }}>CoinCash Pro</strong> para scans ilimitados.
-              </p>
-              {upgradeRequested ? (
-                <p className="text-xs text-center" style={{ color: "#00FFC6", fontWeight: 600 }}>
-                  ✓ Solicitud enviada. El admin verificará tu pago pronto.
-                </p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <input
-                    type="email"
-                    placeholder="Tu email (opcional, para contacto)"
-                    value={upgradeEmail}
-                    onChange={(e) => setUpgradeEmail(e.target.value)}
-                    style={{
-                      background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 8, padding: "7px 12px", fontSize: 12, color: "#fff",
-                      outline: "none", fontFamily: "inherit", width: "100%",
-                    }}
-                  />
+                <div>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#fff" }}>
+                    ⛔ Límite gratuito alcanzado
+                  </p>
+                  <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+                    Actualiza a CoinCash Pro — scans ilimitados
+                  </p>
+                </div>
+                <div style={{
+                  background: "rgba(0,255,198,0.12)", border: "1px solid rgba(0,255,198,0.3)",
+                  borderRadius: 8, padding: "4px 10px", fontSize: 13, fontWeight: 800, color: "#00FFC6",
+                }}>
+                  10 USDT
+                </div>
+              </div>
+
+              <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+                {/* Network badge */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+                    background: "rgba(255,50,50,0.12)", border: "1px solid rgba(255,50,50,0.3)",
+                    color: "#FF6B6B", borderRadius: 6, padding: "3px 8px",
+                  }}>TRC20</span>
+                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Red TRON · USDT</span>
+                </div>
+
+                {/* QR code */}
+                {qrDataUrl && (
+                  <div style={{ display: "flex", justifyContent: "center" }}>
+                    <div style={{ background: "#fff", borderRadius: 12, padding: 8, display: "inline-block" }}>
+                      <img src={qrDataUrl} alt="QR dirección de pago" style={{ width: 160, height: 160, display: "block" }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Address + copy */}
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "10px 12px" }}>
+                  <p style={{ margin: "0 0 6px", fontSize: 10, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    Dirección de pago
+                  </p>
+                  <p style={{
+                    margin: "0 0 8px", fontFamily: "monospace", fontSize: 11,
+                    color: "#00FFC6", wordBreak: "break-all", lineHeight: 1.5,
+                  }}>
+                    {PRO_ADDRESS}
+                  </p>
                   <button
-                    disabled={upgradeSending}
-                    onClick={async () => {
-                      setUpgradeSending(true);
-                      try {
-                        await fetch(`${API_BASE}/freemium/request-upgrade`, {
-                          method:  "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body:    JSON.stringify({ ccId, email: upgradeEmail.trim() }),
-                        });
-                        setUpgradeRequested(true);
-                      } catch { /* ignore */ } finally { setUpgradeSending(false); }
+                    onClick={() => {
+                      navigator.clipboard.writeText(PRO_ADDRESS).then(() => {
+                        setCopiedAddr(true);
+                        setTimeout(() => setCopiedAddr(false), 2500);
+                      });
                     }}
                     style={{
-                      background: upgradeSending ? "rgba(0,255,198,0.1)" : "rgba(0,255,198,0.12)",
-                      border: "1px solid rgba(0,255,198,0.35)", borderRadius: 8,
-                      color: "#00FFC6", fontSize: 12, fontWeight: 700, padding: "8px 0",
-                      cursor: upgradeSending ? "not-allowed" : "pointer", width: "100%",
+                      display: "flex", alignItems: "center", gap: 5, width: "100%",
+                      background: copiedAddr ? "rgba(0,255,198,0.12)" : "rgba(255,255,255,0.06)",
+                      border: `1px solid ${copiedAddr ? "rgba(0,255,198,0.4)" : "rgba(255,255,255,0.12)"}`,
+                      borderRadius: 8, padding: "7px 12px", cursor: "pointer",
+                      color: copiedAddr ? "#00FFC6" : "rgba(255,255,255,0.6)",
+                      fontSize: 12, fontWeight: 600, justifyContent: "center",
+                      transition: "all 0.2s",
                     }}
                   >
-                    {upgradeSending ? "Enviando…" : "💳 Ya pagué — Solicitar activación PRO"}
+                    {copiedAddr ? <Check size={13} /> : <Copy size={13} />}
+                    {copiedAddr ? "¡Dirección copiada!" : "Copiar dirección"}
                   </button>
                 </div>
-              )}
+
+                {/* Instructions */}
+                <div style={{
+                  background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.25)",
+                  borderRadius: 10, padding: "10px 12px",
+                }}>
+                  <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
+                    Envía <strong style={{ color: "#F59E0B" }}>10 USDT (TRC20)</strong> a la dirección anterior.<br />
+                    Luego presiona <strong style={{ color: "#00FFC6" }}>"Ya pagué"</strong> para activar tu plan.
+                  </p>
+                </div>
+
+                {/* Email + Ya pagué / Pending message */}
+                {upgradeRequested ? (
+                  <div style={{
+                    background: "rgba(0,255,198,0.07)", border: "1px solid rgba(0,255,198,0.3)",
+                    borderRadius: 10, padding: "12px 14px", textAlign: "center",
+                  }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#00FFC6" }}>
+                      ✓ Pago en verificación.
+                    </p>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
+                      Activación en pocos minutos.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <input
+                      type="email"
+                      placeholder="Tu email (opcional, para notificarte)"
+                      value={upgradeEmail}
+                      onChange={(e) => setUpgradeEmail(e.target.value)}
+                      style={{
+                        background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#fff",
+                        outline: "none", fontFamily: "inherit", width: "100%",
+                      }}
+                    />
+                    <button
+                      disabled={upgradeSending}
+                      onClick={async () => {
+                        setUpgradeSending(true);
+                        try {
+                          await fetch(`${API_BASE}/freemium/request-upgrade`, {
+                            method:  "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body:    JSON.stringify({ ccId, email: upgradeEmail.trim() }),
+                          });
+                          setUpgradeRequested(true);
+                        } catch { /* ignore */ } finally { setUpgradeSending(false); }
+                      }}
+                      style={{
+                        background: upgradeSending
+                          ? "rgba(0,255,198,0.08)"
+                          : "linear-gradient(135deg,rgba(0,200,150,0.9),rgba(0,255,198,0.8))",
+                        border: "none", borderRadius: 10, padding: "12px 0",
+                        color: upgradeSending ? "rgba(0,255,198,0.5)" : "#0B1220",
+                        fontSize: 13, fontWeight: 800, cursor: upgradeSending ? "not-allowed" : "pointer",
+                        width: "100%", letterSpacing: "0.02em",
+                      }}
+                    >
+                      {upgradeSending ? "Enviando…" : "💳 Ya pagué — Activar PRO"}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
