@@ -18,6 +18,8 @@ import {
   getProDaysRemaining,
   getScanCountToday,
   incrementScanCount,
+  getIpScanCount,
+  incrementIpScanCount,
   setUserPlan,
   resetScanCount,
   requestUpgrade,
@@ -31,6 +33,16 @@ import {
 
 const router  = Router();
 const ADM_KEY = "CoinCashAdmin2026";
+
+/** SHA-256 hash of the client IP — stored instead of raw IP for privacy. */
+function getIpHash(req: any): string {
+  const { createHash } = require("crypto");
+  const raw = (
+    (req.headers["x-forwarded-for"] as string) ?? req.socket?.remoteAddress ?? ""
+  ).split(",")[0].trim();
+  if (!raw) return "";
+  return createHash("sha256").update(raw).digest("hex");
+}
 
 function adminGuard(req: any, res: any): boolean {
   const key = req.query.key ?? req.body?.key ?? "";
@@ -63,18 +75,23 @@ router.post("/freemium/identify", async (req, res) => {
 
 // ── GET /api/freemium/status ──────────────────────────────────────────────────
 router.get("/freemium/status", async (req, res) => {
-  const ccId = ((req.query.ccId as string) ?? "").trim();
+  const ccId  = ((req.query.ccId as string) ?? "").trim();
   if (!ccId) return res.status(400).json({ error: "ccId required" });
+
+  const ipHash = getIpHash(req);
 
   try {
     // Register user row on first visit (fire-and-forget, non-blocking)
     ensureFreemiumUser(ccId).catch(() => {});
 
-    const [plan, scansToday] = await Promise.all([
+    const [plan, ccScans, ipScans] = await Promise.all([
       getUserPlan(ccId),
       getScanCountToday(ccId),
+      ipHash ? getIpScanCount(ipHash) : Promise.resolve(0),
     ]);
 
+    // Enforce the stricter of the two counts (CC-ID or IP)
+    const scansToday    = Math.max(ccScans, ipScans);
     const isPro         = plan === "pro";
     const canScan       = isPro || scansToday < FREE_SCAN_LIMIT;
     const remaining     = isPro ? null : Math.max(0, FREE_SCAN_LIMIT - scansToday);
@@ -95,8 +112,10 @@ router.get("/freemium/status", async (req, res) => {
 
 // ── POST /api/freemium/record ─────────────────────────────────────────────────
 router.post("/freemium/record", async (req, res) => {
-  const ccId = ((req.body?.ccId) ?? "").trim();
+  const ccId   = ((req.body?.ccId) ?? "").trim();
   if (!ccId) return res.status(400).json({ error: "ccId required" });
+
+  const ipHash = getIpHash(req);
 
   try {
     const plan = await getUserPlan(ccId);
@@ -105,15 +124,25 @@ router.post("/freemium/record", async (req, res) => {
       return res.json({ ok: true, plan: "pro", scansToday: null, remaining: null });
     }
 
-    const scansToday = await getScanCountToday(ccId);
-    if (scansToday >= FREE_SCAN_LIMIT) {
-      return res.status(429).json({ error: "limit_reached", limit: FREE_SCAN_LIMIT, scansToday });
+    // Check both CC-ID and IP counters — whichever is higher determines the limit
+    const [ccScans, ipScans] = await Promise.all([
+      getScanCountToday(ccId),
+      ipHash ? getIpScanCount(ipHash) : Promise.resolve(0),
+    ]);
+    const effectiveScans = Math.max(ccScans, ipScans);
+
+    if (effectiveScans >= FREE_SCAN_LIMIT) {
+      return res.status(429).json({ error: "limit_reached", limit: FREE_SCAN_LIMIT, scansToday: effectiveScans });
     }
 
-    const newCount  = await incrementScanCount(ccId);
-    const remaining = Math.max(0, FREE_SCAN_LIMIT - newCount);
+    // Increment both counters atomically
+    const [newCcCount] = await Promise.all([
+      incrementScanCount(ccId),
+      ipHash ? incrementIpScanCount(ipHash) : Promise.resolve(0),
+    ]);
 
-    return res.json({ ok: true, plan: "free", scansToday: newCount, remaining });
+    const remaining = Math.max(0, FREE_SCAN_LIMIT - newCcCount);
+    return res.json({ ok: true, plan: "free", scansToday: newCcCount, remaining });
   } catch (err: any) {
     console.error("[freemium] record error:", err?.message);
     return res.json({ ok: true, plan: "free", scansToday: 0, remaining: FREE_SCAN_LIMIT });

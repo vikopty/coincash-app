@@ -947,7 +947,7 @@ export async function identifyDevice(
   return ccId;
 }
 
-/** Add plan column to users + create scan_limits table. Safe to re-run. */
+/** Add plan column to users + create scan_limits + ip_scan_limits tables. Safe to re-run. */
 export async function ensureFreemiumTable(): Promise<void> {
   // Add plan column to existing users table
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free'`);
@@ -966,7 +966,38 @@ export async function ensureFreemiumTable(): Promise<void> {
       PRIMARY KEY (cc_id, scan_date)
     )
   `);
-  console.log("[db] freemium (plan + scan_limits) ready");
+  // Daily scan counter per IP (hashed) — cross-browser enforcement
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ip_scan_limits (
+      ip_hash    TEXT NOT NULL,
+      scan_date  DATE NOT NULL DEFAULT CURRENT_DATE,
+      scan_count INT  NOT NULL DEFAULT 0,
+      PRIMARY KEY (ip_hash, scan_date)
+    )
+  `);
+  console.log("[db] freemium (plan + scan_limits + ip_scan_limits) ready");
+}
+
+/** Return today's scan count for a given IP hash. */
+export async function getIpScanCount(ipHash: string): Promise<number> {
+  const res = await pool.query<{ scan_count: number }>(
+    `SELECT scan_count FROM ip_scan_limits WHERE ip_hash = $1 AND scan_date = CURRENT_DATE`,
+    [ipHash],
+  );
+  return res.rows[0]?.scan_count ?? 0;
+}
+
+/** Increment and return today's scan count for a given IP hash. */
+export async function incrementIpScanCount(ipHash: string): Promise<number> {
+  const res = await pool.query<{ scan_count: number }>(
+    `INSERT INTO ip_scan_limits (ip_hash, scan_date, scan_count)
+     VALUES ($1, CURRENT_DATE, 1)
+     ON CONFLICT (ip_hash, scan_date)
+     DO UPDATE SET scan_count = ip_scan_limits.scan_count + 1
+     RETURNING scan_count`,
+    [ipHash],
+  );
+  return res.rows[0]?.scan_count ?? 1;
 }
 
 /**
