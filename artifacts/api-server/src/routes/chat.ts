@@ -15,7 +15,7 @@ import {
   saveChatMessage, getChatMessages, getConversation,
   getOrCreateChatUser, getChatUserById, getAllChatUsers,
   addChatContact, getChatContacts, getConversationsForSupport,
-  updateChatUserPhoto,
+  updateChatUserPhoto, markMessagesRead,
 } from "../lib/db";
 
 const SUPPORT_ID = "CC-SUPPORT";
@@ -320,7 +320,7 @@ router.post("/chat/update-photo", async (req, res) => {
 // ── GET /api/chat/conversations ───────────────────────────────────────────────
 /**
  * Admin panel: returns list of all users who've messaged CC-SUPPORT,
- * with their latest message and timestamp. Sorted by most-recent first.
+ * with their latest message, timestamp, and unreadCount per user.
  */
 router.get("/chat/conversations", async (_req, res) => {
   try {
@@ -329,6 +329,26 @@ router.get("/chat/conversations", async (_req, res) => {
   } catch (err: any) {
     console.error("[chat] conversations error:", err?.message);
     return res.status(500).json({ error: "Failed to fetch conversations" });
+  }
+});
+
+// ── POST /api/chat/mark-read ───────────────────────────────────────────────────
+/**
+ * Body: { userId: "CC-XXXXXX" }
+ * Marks all unread messages from a user to CC-SUPPORT as read.
+ * Called when the admin opens a conversation.
+ */
+router.post("/chat/mark-read", async (req, res) => {
+  const { userId } = req.body ?? {};
+  if (!userId || !CC_RE.test(userId)) {
+    return res.status(400).json({ error: "userId must be a valid CC-XXXXXX" });
+  }
+  try {
+    await markMessagesRead(userId);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[chat] mark-read error:", err?.message);
+    return res.status(500).json({ error: "Failed to mark messages as read" });
   }
 });
 

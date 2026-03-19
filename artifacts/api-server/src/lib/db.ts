@@ -406,6 +406,8 @@ export async function ensureMessagesTable(): Promise<void> {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS chat_messages_receiver_idx ON chat_messages (receiver_coincash_id)
   `);
+  // Track read status for admin notifications
+  await pool.query(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE`);
   console.log("[db] chat_messages table ready");
 }
 
@@ -458,16 +460,22 @@ export interface ConversationSummary {
 
 /**
  * For the admin panel: return the latest message per user who has
- * chatted with CC-SUPPORT, ordered by most-recent first.
+ * chatted with CC-SUPPORT, ordered by most-recent first. Includes unreadCount.
  */
 export async function getConversationsForSupport(): Promise<ConversationSummary[]> {
-  const res = await pool.query<ConversationSummary>(`
+  const res = await pool.query<ConversationSummary & { unreadCount: number }>(`
     SELECT DISTINCT ON (sub.user_id)
-      sub.user_id        AS "userId",
-      sub.message        AS "lastMessage",
-      sub.timestamp      AS "lastTime",
+      sub.user_id            AS "userId",
+      sub.message            AS "lastMessage",
+      sub.timestamp          AS "lastTime",
       sub.sender_coincash_id AS "lastSender",
-      cu.photo_url       AS "photoUrl"
+      cu.photo_url           AS "photoUrl",
+      COALESCE((
+        SELECT COUNT(*)::int FROM chat_messages
+        WHERE sender_coincash_id = sub.user_id
+          AND receiver_coincash_id = 'CC-SUPPORT'
+          AND is_read = FALSE
+      ), 0) AS "unreadCount"
     FROM (
       SELECT
         CASE
@@ -484,9 +492,23 @@ export async function getConversationsForSupport(): Promise<ConversationSummary[
     LEFT JOIN chat_users cu ON cu.coincash_id = sub.user_id
     ORDER BY sub.user_id, "lastTime" DESC
   `);
-  // Second sort: by time descending across all users
   return res.rows.sort(
     (a, b) => new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime(),
+  );
+}
+
+/**
+ * Mark all unread messages from a specific user to CC-SUPPORT as read.
+ * Called when the admin opens a conversation.
+ */
+export async function markMessagesRead(fromUserId: string): Promise<void> {
+  await pool.query(
+    `UPDATE chat_messages
+        SET is_read = TRUE
+      WHERE sender_coincash_id = $1
+        AND receiver_coincash_id = 'CC-SUPPORT'
+        AND is_read = FALSE`,
+    [fromUserId],
   );
 }
 

@@ -46,11 +46,30 @@ const SUPPORT_ID  = "CC-SUPPORT";
 const API         = API_BASE;
 
 interface ConvSummary {
-  userId:      string;
-  lastMessage: string;
-  lastTime:    string;
-  lastSender:  string;
-  photoUrl?:   string | null;
+  userId:       string;
+  lastMessage:  string;
+  lastTime:     string;
+  lastSender:   string;
+  photoUrl?:    string | null;
+  unreadCount?: number;
+}
+
+/** Play a short notification beep using the Web Audio API — no files needed. */
+function playNotif() {
+  try {
+    const ctx  = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch { /* silently ignore if audio not available */ }
 }
 
 interface ChatMessage {
@@ -186,7 +205,18 @@ export default function AdminPage() {
     try {
       const res  = await fetch(`${API}/chat/conversations`);
       const data = await res.json();
-      if (data.conversations) setConversations(data.conversations);
+      if (data.conversations) {
+        setConversations(data.conversations);
+        // Sync unread badge from persistent DB state
+        setUnreadUsers((prev) => {
+          const next = new Set(prev);
+          (data.conversations as ConvSummary[]).forEach((c) => {
+            if ((c.unreadCount ?? 0) > 0) next.add(c.userId);
+            else next.delete(c.userId);
+          });
+          return next;
+        });
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -247,24 +277,24 @@ export default function AdminPage() {
     refreshConversations();
   }, [messages, selectedUser, refreshConversations]);
 
-  // Mark unread: any incoming client message for a user that isn't currently open
+  // Mark unread + play sound: any incoming client message not from the open conversation
   const seenMsgIds = useRef<Set<number>>(new Set());
   useEffect(() => {
     messages.forEach((m) => {
       if (seenMsgIds.current.has(m.id)) return;
       seenMsgIds.current.add(m.id);
-      // Only flag messages FROM a real client (not from support/admin)
       const isFromClient = m.senderCcId !== SUPPORT_ID && m.senderCcId !== ADMIN_CC_ID;
       if (!isFromClient) return;
       const fromUser = m.senderCcId;
       if (fromUser !== selectedUser) {
         setUnreadUsers((prev) => new Set(prev).add(fromUser));
+        playNotif();
         refreshConversations();
       }
     });
   }, [messages, selectedUser, refreshConversations]);
 
-  // Clear unread when user opens a conversation
+  // Clear unread when user opens a conversation; mark messages as read in DB
   function openConversation(userId: string) {
     setSelectedUser(userId);
     setUnreadUsers((prev) => {
@@ -272,6 +302,12 @@ export default function AdminPage() {
       next.delete(userId);
       return next;
     });
+    // Persist read state so badge resets after page reload too
+    fetch(`${API}/chat/mark-read`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ userId }),
+    }).catch(() => {});
   }
 
   useEffect(() => {
@@ -680,12 +716,17 @@ export default function AdminPage() {
                     </div>
                     {hasUnread && (
                       <div style={{
-                        position: "absolute", top: 0, right: 0,
-                        width: 12, height: 12, borderRadius: "50%",
-                        background: "#00FFC6",
+                        position: "absolute", top: -2, right: -2,
+                        minWidth: 16, height: 16, borderRadius: 8,
+                        background: "#00FFC6", color: "#0B1220",
                         border: "2px solid #0B0F14",
+                        fontSize: 9, fontWeight: 800,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        padding: "0 3px",
                         animation: "pulse 1.5s infinite",
-                      }} />
+                      }}>
+                        {(c.unreadCount ?? 1) > 9 ? "9+" : (c.unreadCount ?? 1)}
+                      </div>
                     )}
                   </div>
 
