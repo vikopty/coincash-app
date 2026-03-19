@@ -109,7 +109,158 @@ function timeAgo(iso: string) {
   return `hace ${Math.floor(h / 24)}d`;
 }
 
+// ── Admin credentials (frontend gate — not a security replacement) ────────────
+const ADMIN_USER = "Admin";
+const ADMIN_PASS = "@dmin!001";
+const SESSION_KEY = "cc_admin_auth";
+
+function AdminLoginGate({ onLogin }: { onLogin: () => void }) {
+  const [user, setUser]   = useState("");
+  const [pass, setPass]   = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy]   = useState(false);
+  const [showPass, setShowPass] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    setTimeout(() => {
+      if (user.trim() === ADMIN_USER && pass === ADMIN_PASS) {
+        sessionStorage.setItem(SESSION_KEY, "1");
+        onLogin();
+      } else {
+        setError("Usuario o contraseña incorrectos");
+      }
+      setBusy(false);
+    }, 600);
+  };
+
+  return (
+    <div style={{
+      minHeight: "100dvh", background: "#0B0F14", display: "flex",
+      flexDirection: "column", alignItems: "center", justifyContent: "center",
+      padding: 24, fontFamily: "system-ui, sans-serif",
+    }}>
+      {/* Logo */}
+      <div style={{ marginBottom: 32, textAlign: "center" }}>
+        <div style={{ fontSize: 32, fontWeight: 800, color: "#00FFC6", letterSpacing: "-0.5px" }}>
+          CoinCash
+        </div>
+        <div style={{ fontSize: 13, color: "#4B5563", marginTop: 4 }}>Panel de administración</div>
+      </div>
+
+      {/* Card */}
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          width: "100%", maxWidth: 360,
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 20, padding: "32px 28px",
+        }}
+      >
+        <div style={{ marginBottom: 24, textAlign: "center" }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#E5E7EB" }}>Iniciar sesión</div>
+        </div>
+
+        {/* Usuario */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 12, color: "#6B7280", fontWeight: 600, display: "block", marginBottom: 6 }}>
+            USUARIO
+          </label>
+          <input
+            type="text"
+            value={user}
+            onChange={e => setUser(e.target.value)}
+            placeholder="Usuario"
+            autoComplete="username"
+            required
+            style={{
+              width: "100%", boxSizing: "border-box",
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 10, padding: "12px 14px",
+              color: "#E5E7EB", fontSize: 15, outline: "none",
+            }}
+          />
+        </div>
+
+        {/* Contraseña */}
+        <div style={{ marginBottom: 24 }}>
+          <label style={{ fontSize: 12, color: "#6B7280", fontWeight: 600, display: "block", marginBottom: 6 }}>
+            CONTRASEÑA
+          </label>
+          <div style={{ position: "relative" }}>
+            <input
+              type={showPass ? "text" : "password"}
+              value={pass}
+              onChange={e => setPass(e.target.value)}
+              placeholder="Contraseña"
+              autoComplete="current-password"
+              required
+              style={{
+                width: "100%", boxSizing: "border-box",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 10, padding: "12px 44px 12px 14px",
+                color: "#E5E7EB", fontSize: 15, outline: "none",
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass(v => !v)}
+              style={{
+                position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                background: "none", border: "none", color: "#6B7280", cursor: "pointer",
+                fontSize: 13, padding: 0,
+              }}
+            >
+              {showPass ? "Ocultar" : "Ver"}
+            </button>
+          </div>
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div style={{
+            marginBottom: 16, background: "rgba(255,77,79,0.1)",
+            border: "1px solid rgba(255,77,79,0.3)", borderRadius: 10,
+            padding: "10px 14px", fontSize: 13, color: "#FF4D4F", textAlign: "center",
+          }}>
+            {error}
+          </div>
+        )}
+
+        {/* Submit */}
+        <button
+          type="submit"
+          disabled={busy}
+          style={{
+            width: "100%", padding: "13px 0",
+            background: busy ? "rgba(0,255,198,0.15)" : "linear-gradient(135deg, #00DCA0, #00FFC6)",
+            border: "none", borderRadius: 10,
+            color: busy ? "#00FFC6" : "#0B0F14",
+            fontWeight: 800, fontSize: 15, cursor: busy ? "not-allowed" : "pointer",
+            letterSpacing: "0.02em",
+          }}
+        >
+          {busy ? "Verificando…" : "Entrar al panel"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function AdminPage() {
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem(SESSION_KEY) === "1");
+
+  if (!authed) return <AdminLoginGate onLogin={() => setAuthed(true)} />;
+
+  return <AdminPanelInner />;
+}
+
+function AdminPanelInner() {
   const [conversations, setConversations] = useState<ConvSummary[]>([]);
   const [selectedUser, setSelectedUser]   = useState<string | null>(null);
   const [convMessages, setConvMessages]   = useState<ChatMessage[]>([]);
